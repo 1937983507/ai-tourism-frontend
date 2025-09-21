@@ -31,11 +31,11 @@
                 
                 <div class="conversation-list">
                     <div 
-                        v-for="(conversation, index) in conversations" 
+                        v-for="(conversation, index) in sessionList" 
                         :key="index" 
                         class="conversation-item"
-                        :class="{ active: currentConversation === index }"
-                        @click="selectConversation(index)"
+                        :class="{ active: currentSessionId === conversation.session_id }"
+                        @click="selectConversation(conversation)"
                     >
                         <i class="fas fa-comment-dots conversation-icon"></i>
                         {{ conversation.title }}
@@ -47,17 +47,17 @@
             <div class="chat-container">
                 <div class="chat-header">
                     <div>
-                        <i class="fas fa-comment"></i> {{ currentConversationData.title }}
+                        <i class="fas fa-comment"></i> {{ currentConversationTitle }}
                     </div>
                 </div>
                 <div class="chat-messages" ref="messagesContainer">
                     <div 
-                        v-for="(message, index) in currentConversationData.messages" 
+                        v-for="(message, index) in currentMessages" 
                         :key="index" 
                         class="message"
-                        :class="message.sender"
+                        :class="message.role === 'user' ? 'user' : 'bot'"
                     >
-                        {{ message.text }}
+                        {{ message.content }}
                     </div>
                 </div>
                 <div class="chat-input">
@@ -66,8 +66,9 @@
                         v-model="newMessage" 
                         placeholder="输入消息..."
                         @keyup.enter="sendMessage"
+                        :disabled="!currentSessionId"
                     >
-                    <button @click="sendMessage">
+                    <button @click="sendMessage" :disabled="!currentSessionId">
                         <i class="fas fa-paper-plane"></i> 发送
                     </button>
                 </div>
