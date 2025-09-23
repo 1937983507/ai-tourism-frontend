@@ -3,99 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> AI 旅游生活助手 </title>
-    <link rel="stylesheet" href="./css/style.css">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <title>AI 旅游生活助手</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div id="app">
-        <header class="header">
-            <h1><i class="fas fa-comments"></i>  AI 旅游生活助手 </h1>
-            <div class="user-info">欢迎，用户 {{ userId }}</div>
-        </header>
-        
-        <div class="container">
-            <!-- 左侧历史对话 -->
-            <div class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
-                <div class="sidebar-header">
-                    <h2><i class="fas fa-history"></i> 对话历史</h2>
-                    <button class="toggle-btn" @click="toggleSidebar">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                </div>
-                
-                <button class="new-chat-btn" @click="startNewConversation">
-                    <i class="fas fa-plus"></i> 开启新对话
-                </button>
-                
-                <div class="conversation-list">
-                    <div 
-                        v-for="(conversation, index) in conversations" 
-                        :key="index" 
-                        class="conversation-item"
-                        :class="{ active: currentConversation === index }"
-                        @click="selectConversation(index)"
-                    >
-                        <i class="fas fa-comment-dots conversation-icon"></i>
-                        {{ conversation.title }}
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 中间聊天区域 -->
-            <div class="chat-container">
-                <div class="chat-header">
-                    <div>
-                        <i class="fas fa-comment"></i> {{ currentConversationData.title }}
-                    </div>
-                </div>
-                <div class="chat-messages" ref="messagesContainer">
-                    <div 
-                        v-for="(message, index) in currentConversationData.messages" 
-                        :key="index" 
-                        class="message"
-                        :class="message.sender"
-                    >
-                        {{ message.text }}
-                    </div>
-                </div>
-                <div class="chat-input">
-                    <input 
-                        type="text" 
-                        v-model="newMessage" 
-                        placeholder="输入消息..."
-                        @keyup.enter="sendMessage"
-                    >
-                    <button @click="sendMessage">
-                        <i class="fas fa-paper-plane"></i> 发送
-                    </button>
-                </div>
-            </div>
-            
-            <!-- 右侧地图 -->
-            <div class="map-container">
-                <div class="map-header">
-                    <div><i class="fas fa-map-marked-alt"></i> 位置信息</div>
-                    <button class="toggle-btn" @click="refreshLocation">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                </div>
-                <div id="map"></div>
-                <div class="location-info">
-                    <p><i class="fas fa-map-marker-alt"></i> 当前位置: {{ currentLocation }}</p>
-                    <p><i class="fas fa-clock"></i> 上次更新: {{ locationUpdateTime }}</p>
-                </div>
-            </div>
-        </div>
-        
-        <button class="floating-toggle" @click="toggleSidebar" v-if="isSidebarCollapsed">
-            <i class="fas fa-chevron-right"></i>
-        </button>
-    </div>
-
-    <!-- 高德地图API -->
+    <div id="app"></div>
     <script src="https://webapi.amap.com/maps?v=2.0&key=80838eddfb922202b289fd1ad6fa4e58"></script>
-    <script src="./js/app.js"></script>
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>
