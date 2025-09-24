@@ -140,8 +140,8 @@ export default {
     const initMap = () => {
       try {
         map.value = new AMap.Map('map', {
-          zoom: 13,
-          center: [113.264435, 23.129163],
+          zoom: 12,
+          center: [116.397, 39.905],
           viewMode: '3D',
           features: ['bg', 'road', 'building'],
           mapStyle: 'amap://styles/normal'
