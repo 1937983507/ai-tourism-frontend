@@ -1,5 +1,3 @@
-import { simpleMarkdownParser } from './markdownRenderer.js'
-
 // API基础URL
 const API_BASE_URL = 'http://127.0.0.1:8080'
 
@@ -215,6 +213,10 @@ export function processStreamedData(data) {
                 if (text) {
                     messages.push(text);
                 }
+            }
+            else if(jsonData.dailyRoutes && jsonData.dailyRoutes.length > 0) {
+                console.log(jsonData);
+                
             }
         } catch (error) {
             console.error('解析流式数据出错:', error);

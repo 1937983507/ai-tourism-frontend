@@ -24,8 +24,8 @@
       
       <MapContainer
         :location="currentLocation"
-        :update-time="locationUpdateTime"
-        @refresh-location="refreshLocation"
+        :updateTime="updateTime"
+        :routeData="selectedRouteData"
       />
     </div>
     
@@ -63,6 +63,8 @@ export default {
     const currentSessionId = ref(null)
     const currentMessages = ref([])
     const isLoading = ref(false)
+    const selectedRouteData = ref(null) // 当前选中的路线数据
+    const updateTime = ref('2025-09-24 19:00:00')
 
     const currentConversationTitle = computed(() => {
       if (!currentSessionId.value) return '请选择或创建对话'
@@ -74,10 +76,33 @@ export default {
       isSidebarCollapsed.value = !isSidebarCollapsed.value
     }
     
-    async function selectConversation(conversation) {
+    // async function selectConversation(conversation) {
+    //   currentSessionId.value = conversation.session_id
+    //   await fetchConversationHistory(conversation.session_id, currentMessages)
+    // }
+
+    // 选择会话
+    const selectConversation = (conversation) => {
       currentSessionId.value = conversation.session_id
-      await fetchConversationHistory(conversation.session_id, currentMessages)
+      fetchConversationHistory(conversation.session_id, currentMessages)
+      
+      // 如果会话有路线数据，传递给地图组件
+      if (conversation.daily_routes) {
+        selectedRouteData.value = {
+          ...conversation,
+          daily_routes: conversation.daily_routes
+        }
+      } else {
+        selectedRouteData.value = null
+      }
     }
+
+    // // 刷新位置
+    // const refreshLocation = () => {
+    //   // 实现位置刷新逻辑
+    //   console.log('刷新位置')
+    // }
+
     
     async function startNewConversation() {
       const newSessionId = generateUUID()
@@ -136,7 +161,9 @@ export default {
       selectConversation,
       startNewConversation,
       sendMessage,
-      refreshLocation
+      refreshLocation,
+      selectedRouteData,
+      updateTime
     }
   }
 }

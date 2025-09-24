@@ -1,53 +1,615 @@
 <template>
   <div class="map-container">
     <div class="map-header">
-      <div><i class="fas fa-map-marked-alt"></i> 位置信息</div>
-      <button class="toggle-btn" @click="$emit('refresh-location')">
-        <i class="fas fa-sync-alt"></i>
-      </button>
+      <div><i class="fas fa-map-marked-alt"></i> 旅游路线规划</div>
+      <div class="map-controls">
+        <button class="control-btn" @click="toggleSatelliteView">
+          <i :class="isSatelliteView ? 'fas fa-map' : 'fas fa-satellite'"></i>
+          {{ isSatelliteView ? '街道图' : '卫星图' }}
+        </button>
+        <button class="control-btn" @click="fitToRoutes">
+          <i class="fas fa-expand-alt"></i>
+          适应路线
+        </button>
+      </div>
     </div>
+    
     <div id="map"></div>
-    <div class="location-info">
-      <p><i class="fas fa-map-marker-alt"></i> 当前位置: {{ location }}</p>
-      <p><i class="fas fa-clock"></i> 上次更新: {{ updateTime }}</p>
+    
+    <div class="route-panel" v-if="currentRoute">
+      <div class="panel-header">
+        <h4><i class="fas fa-route"></i> {{ currentRoute.title }}</h4>
+        <button class="close-btn" @click="clearAll">×</button>
+      </div>
+      
+      <div class="days-tabs">
+        <button 
+          v-for="(day, dayIndex) in currentRoute.days" 
+          :key="dayIndex"
+          :class="['tab-btn', { active: activeDay === dayIndex }]"
+          @click="activeDay = dayIndex"
+        >
+          第 {{ dayIndex + 1 }} 天
+        </button>
+      </div>
+      
+      <div class="day-details" v-if="activeDay !== null">
+        <div class="day-summary">
+          <i class="fas fa-walking"></i>
+          共 {{ currentRoute.days[activeDay].points.length }} 个景点
+          <span class="distance" v-if="currentRoute.days[activeDay].distance">
+            · 约 {{ currentRoute.days[activeDay].distance }} km
+          </span>
+        </div>
+        
+        <div class="points-list">
+          <div 
+            v-for="(point, pointIndex) in currentRoute.days[activeDay].points" 
+            :key="pointIndex"
+            :class="['point-item', { active: activePoint === pointIndex }]"
+            @click="focusOnPoint(activeDay, pointIndex)"
+            @mouseenter="highlightPoint(activeDay, pointIndex)"
+            @mouseleave="unhighlightPoint(activeDay, pointIndex)"
+          >
+            <div class="point-marker">
+              <span class="marker-number">{{ pointIndex + 1 }}</span>
+            </div>
+            <div class="point-info">
+              <div class="point-name">{{ point.keyword }}</div>
+              <div class="point-city">{{ point.city }}</div>
+            </div>
+            <i class="fas fa-chevron-right"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div v-else class="empty-state">
+      <i class="fas fa-map-marked-alt"></i>
+      <p>选择包含路线的会话查看地图</p>
     </div>
   </div>
 </template>
 
 <script>
-import { onMounted } from 'vue'
+import { onMounted, ref, watch, nextTick } from 'vue'
 
 export default {
   name: 'MapContainer',
   props: {
     location: String,
-    updateTime: String
+    updateTime: String,
+    routeData: Object
   },
   emits: ['refresh-location'],
-  setup() {
-    onMounted(() => {
+  setup(props) {
+    const map = ref(null)
+    const driving = ref(null)
+    const currentRoute = ref(null)
+    const activeDay = ref(0)
+    const activePoint = ref(null)
+    const isSatelliteView = ref(false)
+    const markers = ref([]) // 保存所有标记点
+    const infoWindows = ref([]) // 保存信息窗口
+    const dayLabels = ref([])
+    const satellite = ref(null)
+    const polylines = ref([])
+
+    // 自定义标记图标
+    const createMarkerIcon = (number, color = '#1890FF') => {
+      return `
+        <div style="
+          background-color: ${color};
+          border: 3px solid white;
+          border-radius: 50%;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        ">${number}</div>
+      `
+    }
+
+
+    // 创建天数标签
+    const createDayLabel = (dayIndex, position, color) => {
+      return new AMap.Text({
+        text: `第${dayIndex + 1}天`,
+        position: position,
+        style: {
+          'background-color': color,
+          'color': '#fff',
+          'border': '2px solid white',
+          'border-radius': '15px',
+          'padding': '4px 10px',
+          'font-size': '12px',
+          'font-weight': 'bold',
+          'box-shadow': '0 2px 6px rgba(0,0,0,0.3)'
+        },
+        offset: new AMap.Pixel(0, -10)
+      })
+    }
+
+
+    // 初始化地图
+    const initMap = () => {
       try {
-        const map = new AMap.Map('map', {
+        map.value = new AMap.Map('map', {
           zoom: 13,
-          center: [116.397428, 39.90923],
-          viewMode: '3D'
+          center: [113.264435, 23.129163],
+          viewMode: '3D',
+          features: ['bg', 'road', 'building'],
+          mapStyle: 'amap://styles/normal'
+        })
+
+        satellite.value = new AMap.TileLayer.Satellite();
+        map.value.addLayer(satellite.value);
+        satellite.value.hide();
+        
+        // 初始化驾车导航插件
+        AMap.plugin(['AMap.Driving', 'AMap.InfoWindow'], () => {
+          driving.value = new AMap.Driving({
+            map: map.value,
+            policy: AMap.DrivingPolicy.LEAST_TIME,
+            hideMarkers: true, // 隐藏默认标记，使用自定义标记
+            showTraffic: true,
+            autoFitView: false
+          })
         })
       } catch (error) {
         console.error('地图初始化失败:', error)
-        const mapElement = document.getElementById('map')
-        if (mapElement) {
-          mapElement.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: #666;">
-              <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
-              <p>地图加载失败</p>
-              <p>请检查高德地图API密钥配置</p>
-            </div>
-          `
+        showMapError()
+      }
+    }
+
+    // 显示地图错误
+    const showMapError = () => {
+      const mapElement = document.getElementById('map')
+      if (mapElement) {
+        mapElement.innerHTML = `
+          <div style="padding: 40px; text-align: center; color: #666;">
+            <i class="fas fa-exclamation-triangle" style="font-size: 3rem; margin-bottom: 1rem; color: #ff4d4f;"></i>
+            <h3 style="margin: 0 0 10px 0;">地图加载失败</h3>
+            <p style="margin: 0;">请检查高德地图API密钥配置或网络连接</p>
+          </div>
+        `
+      }
+    }
+
+    // 清除所有标记和路线
+    const clearAll = () => {
+      if (driving.value) {
+        driving.value.clear()
+      }
+      
+      // 清除所有标记
+      markers.value.forEach(dayMarkers => {
+        dayMarkers.forEach(marker => {
+          map.value.remove(marker)
+        })
+      })
+      markers.value = []
+      
+      // 清除所有信息窗口
+      infoWindows.value.forEach(dayWindows => {
+        dayWindows.forEach(window => {
+          window.close()
+        })
+      })
+      infoWindows.value = []
+
+      // 清除所有路线
+      polylines.value.forEach(polyline => {
+        map.value.remove(polyline)
+      })
+      polylines.value = []
+
+      // 清除所有天数标签
+      dayLabels.value.forEach(label => {
+        map.value.remove(label)
+      })
+      dayLabels.value = []
+      
+      currentRoute.value = null
+      activeDay.value = 0
+      activePoint.value = null
+    }
+
+    // 创建信息窗口内容
+    const createInfoWindowContent = (point, dayIndex, pointIndex) => {
+      return `
+        <div class="custom-info-window">
+          <div class="info-header">
+            <span class="point-number">${pointIndex + 1}</span>
+            <h4>${point.keyword}</h4>
+          </div>
+          <div class="info-body">
+            <p><i class="fas fa-city"></i> ${point.city}</p>
+            <p><i class="fas fa-calendar-day"></i> 第 ${dayIndex + 1} 天 · 第 ${pointIndex + 1} 站</p>
+        </div>
+      `
+    }
+
+      // </div>
+      // <div class="info-footer">
+      //   <button onclick="this.dispatchEvent(new CustomEvent('navigate', { detail: { keyword: '${point.keyword}', city: '${point.city}' } }))">
+      //     <i class="fas fa-directions"></i> 导航至此
+      //   </button>
+      // </div>
+
+
+    // 计算路径中间点位置
+    const getPathMidpoint = (path) => {
+      if (!path || path.length === 0) return null
+      const midIndex = Math.floor(path.length / 2)
+      return path[midIndex]
+    }
+
+    // 渲染路线和标记
+    const renderRoute = async (routeData) => {
+      if (!driving.value || !map.value) return
+      
+      clearAll()
+      
+      try {
+        const parsedData = JSON.parse(routeData.daily_routes)
+        const dailyRoutes = parsedData.dailyRoutes
+        
+        if (!dailyRoutes || dailyRoutes.length === 0) return
+        
+        currentRoute.value = {
+          title: routeData.title,
+          days: []
         }
+
+        const colors = [
+          { primary: '#1890FF', light: '#E6F7FF' }, // 蓝色
+          { primary: '#52C41A', light: '#F6FFED' }, // 绿色
+          { primary: '#FAAD14', light: '#FFFBE6' }, // 橙色
+          { primary: '#F5222D', light: '#FFF1F0' }, // 红色
+          { primary: '#722ED1', light: '#F9F0FF' }  // 紫色
+        ]
+
+
+        // 初始化标记和窗口数组
+        markers.value = []
+        infoWindows.value = []
+        
+        let allPoints = [] // 收集所有点用于适应视图
+        
+        for (let dayIndex = 0; dayIndex < dailyRoutes.length; dayIndex++) {
+          console.log("当前第"+dayIndex+"天")
+          const dayRoute = dailyRoutes[dayIndex]
+          console.log(dayRoute)
+          const points = dayRoute.points
+          console.log(points)
+          const color = colors[dayIndex % colors.length]
+          
+          // if (points.length < 2) continue
+          
+          // 保存当天的景点信息
+          const dayInfo = {
+            points: points.map(p => ({ keyword: p.keyword, city: p.city })),
+            distance: 0
+          }
+          console.log(dayInfo);
+          
+          currentRoute.value.days.push(dayInfo)
+          
+          const searchPoints = points.map(point => ({
+            keyword: point.keyword,
+            city: point.city
+          }))
+
+          console.log(searchPoints);
+          
+          await new Promise((resolve) => {
+            driving.value.search(searchPoints, (status, result) => {
+              if (status === 'complete') {
+                if (result.routes && result.routes.length > 0) {
+                  const route = result.routes[0]
+                  
+                  // 计算距离
+                  dayInfo.distance = (route.distance / 1000).toFixed(1)
+                  
+                  // 绘制路线
+                  const path = route.steps.reduce((acc, step) => {
+                    return acc.concat(step.path)
+                  }, [])
+                  
+                  const polyline = new AMap.Polyline({
+                    path: path,
+                    strokeColor: color.primary,
+                    strokeWeight: 6,
+                    strokeOpacity: 0.8,
+                    strokeStyle: 'solid',
+                    strokeDasharray: dayIndex === 0 ? [] : [5, 5] // 第二天开始使用虚线
+                  })
+                  
+                  map.value.add(polyline)
+                  polylines.value.push(polyline)
+
+                  // 在路线中间添加天数标签
+                  const midpoint = getPathMidpoint(path)
+                  if (midpoint) {
+                    const dayLabel = createDayLabel(dayIndex, midpoint, color.primary)
+                    map.value.add(dayLabel)
+                    dayLabels.value.push(dayLabel)
+                  }
+
+                  // 初始化当天的标记数组
+                  markers.value[dayIndex] = []
+                  infoWindows.value[dayIndex] = []
+
+                  // 起点标记
+                  const startMarker = new AMap.Marker({
+                    position: path[0],
+                    content: `
+                      <div style="
+                        background-color: ${color.primary};
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 12px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                        white-space: nowrap;
+                      ">起点</div>
+                    `,
+                    offset: new AMap.Pixel(-20, -10)
+                  })
+
+                  // 信息窗口
+                  const startInfoWindow = new AMap.InfoWindow({
+                    content: createInfoWindowContent(
+                      points[0] || { keyword: '未知地点', city: '未知城市' },
+                      dayIndex,
+                      0
+                    ),
+                    offset: new AMap.Pixel(0, -30),
+                    closeWhenClickMap: true
+                  })
+                  
+                  // 点击标记显示信息窗口
+                  startMarker.on('click', () => {
+                    // 关闭所有信息窗口
+                    infoWindows.value.forEach(dayWindows => {
+                      dayWindows.forEach(w => w.close())
+                    })
+                    startInfoWindow.open(map.value, startMarker.getPosition())
+                    activeDay.value = dayIndex
+                    activePoint.value = pointIndex
+                  })
+                  
+                  map.value.add([startMarker])
+                  infoWindows.value[dayIndex].push(startInfoWindow)  
+                  markers.value[dayIndex].push(startMarker)
+
+                  
+                  // 添加标记点
+                  if (result.waypoints && result.waypoints.length > 0) {
+                    result.waypoints.forEach((waypoint, pointIndex) => {
+                      const marker = new AMap.Marker({
+                        position: waypoint.location,
+                        content: createMarkerIcon(pointIndex + 1, color.primary),
+                        offset: new AMap.Pixel(-16, -16),
+                        title: points[pointIndex]?.keyword || '未知地点'
+                      })
+                      
+                      // 信息窗口
+                      const infoWindow = new AMap.InfoWindow({
+                        content: createInfoWindowContent(
+                          points[pointIndex+1] || { keyword: '未知地点', city: '未知城市' },
+                          dayIndex,
+                          pointIndex+1
+                        ),
+                        offset: new AMap.Pixel(0, -30),
+                        closeWhenClickMap: true
+                      })
+                      
+                      // 点击标记显示信息窗口
+                      marker.on('click', () => {
+                        // 关闭所有信息窗口
+                        infoWindows.value.forEach(dayWindows => {
+                          dayWindows.forEach(w => w.close())
+                        })
+                        infoWindow.open(map.value, marker.getPosition())
+                        activeDay.value = dayIndex
+                        activePoint.value = pointIndex
+                      })
+                      
+                      // map.value.add(marker)
+                      markers.value[dayIndex].push(marker)
+                      infoWindows.value[dayIndex].push(infoWindow)
+                      
+                      allPoints.push(waypoint.location)
+                    })
+                  }
+                  
+              
+                  // 终点标记
+                  const endMarker = new AMap.Marker({
+                    position: path[path.length - 1],
+                    content: `
+                      <div style="
+                        background-color: ${color.primary};
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 12px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                        white-space: nowrap;
+                      ">终点</div>
+                    `,
+                    offset: new AMap.Pixel(-20, -10)
+                  })
+
+                   // 信息窗口
+                  const endInfoWindow = new AMap.InfoWindow({
+                    content: createInfoWindowContent(
+                      points[points.length-1] || { keyword: '未知地点', city: '未知城市' },
+                      dayIndex,
+                      markers.value[dayIndex].length
+                    ),
+                    offset: new AMap.Pixel(0, -30),
+                    closeWhenClickMap: true
+                  })
+                  
+                  // 点击标记显示信息窗口
+                  endMarker.on('click', () => {
+                    // 关闭所有信息窗口
+                    infoWindows.value.forEach(dayWindows => {
+                      dayWindows.forEach(w => w.close())
+                    })
+                    endInfoWindow.open(map.value, endMarker.getPosition())
+                    activeDay.value = dayIndex
+                    activePoint.value = pointIndex
+                  })
+                  
+                  map.value.add([endMarker])
+                  infoWindows.value[dayIndex].push(endInfoWindow)  
+                  markers.value[dayIndex].push(endMarker)
+                  
+                }
+                resolve()
+              } else {
+                console.error(`第${dayIndex + 1}天路线规划失败:`, result)
+                resolve()
+              }
+            })
+          })
+        }
+        
+        // 适应视图显示所有标记
+        fitToRoutes();
+        
+      } catch (error) {
+        console.error('路线数据解析失败:', error)
+      }
+    }
+
+    // 聚焦到特定点
+    const focusOnPoint = (dayIndex, pointIndex) => {
+      console.log(dayIndex, pointIndex);
+      activePoint.value = pointIndex
+      const marker = markers.value[dayIndex][pointIndex]
+      if (marker) {
+        console.log(marker)
+        map.value.setCenter(marker.getPosition(), true, 100)
+        map.value.setZoom(15)
+      }
+
+      // 显示信息窗口
+      if (infoWindows.value[dayIndex] && infoWindows.value[dayIndex][pointIndex]) {
+        console.log("先关闭所有窗口");
+        // 关闭所有其他信息窗口
+        infoWindows.value.forEach(dayWindows => {
+          dayWindows.forEach((window, index) => {
+            if(window) window.close()
+          })
+        })
+        
+        console.log("再打开当前窗口")
+        // 打开当前信息窗口
+        setTimeout(() => {
+          infoWindows.value[dayIndex][pointIndex].open(map.value, marker.getPosition())
+        }, 100)
+      }
+
+    }
+
+    // 高亮标记点
+    const highlightPoint = (dayIndex, pointIndex) => {
+      // 可以在这里实现鼠标悬停效果
+    }
+
+    const unhighlightPoint = (dayIndex, pointIndex) => {
+      // 取消高亮
+    }
+
+
+    // 切换卫星视图
+    const toggleSatelliteView = () => {
+      isSatelliteView.value = !isSatelliteView.value
+      if(isSatelliteView.value){
+        satellite.value.show();
+      }else{
+        satellite.value.hide();
+      }
+    }
+
+    // 适应路线视图
+    const fitToRoutes = () => {
+      if (markers.value.length > 0) {
+        // 初始化边界值
+        let minLng = Infinity;
+        let minLat = Infinity;
+        let maxLng = -Infinity;
+        let maxLat = -Infinity;
+        
+        // 遍历所有 markers
+        for (let i = 0; i < markers.value.length; i++) {
+            const markerGroup = markers.value[i];
+            
+            for (let j = 0; j < markerGroup.length; j++) {
+                const marker = markerGroup[j];
+                const position = marker.getPosition();
+                
+                // 更新边界值
+                minLng = Math.min(minLng, position.lng);
+                minLat = Math.min(minLat, position.lat);
+                maxLng = Math.max(maxLng, position.lng);
+                maxLat = Math.max(maxLat, position.lat);
+            }
+        }
+        
+        // 如果没有有效的 markers，返回 null 或默认值
+        if (minLng === Infinity) {
+            return null; // 或者返回默认范围
+        }
+
+        let lng = maxLng-minLng;
+        let lat = maxLat-minLat;
+
+        var mybounds = new AMap.Bounds([minLng-lng*0.4, minLat-lat*0.4], [maxLng+lng*0.4, maxLat+lat*0.4]);
+        map.value.setBounds(mybounds);
+        
+      }
+    }
+
+    // 监听routeData变化
+    watch(() => props.routeData, (newVal) => {
+      if (newVal && newVal.daily_routes) {
+        nextTick(() => {
+          renderRoute(newVal)
+        })
+      } else {
+        clearAll()
       }
     })
 
-    return {}
+    onMounted(() => {
+      initMap()
+    })
+
+    return {
+      currentRoute,
+      activeDay,
+      activePoint,
+      isSatelliteView,
+      clearAll,
+      focusOnPoint,
+      highlightPoint,
+      unhighlightPoint,
+      toggleSatelliteView,
+      fitToRoutes
+    }
   }
 }
 </script>
@@ -57,48 +619,238 @@ export default {
   flex: 2;
   display: flex;
   flex-direction: column;
-  max-width: 1300px;
-  border-left: 1px solid #ddd;
-  background-color: white;
-  min-width: 0;
+  position: relative;
 }
 
 .map-header {
-  padding: 1rem;
-  border-bottom: 1px solid #eee;
-  font-weight: 500;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #3498db, #2c3e50);
+  color: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.map-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.control-btn {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.3s;
+}
+
+.control-btn:hover {
+  background: rgba(255,255,255,0.3);
 }
 
 #map {
   flex: 1;
-  min-height: 200px;
+  min-height: 400px;
 }
 
-.location-info {
-  padding: 1rem;
-  border-top: 1px solid #eee;
-  font-size: 0.9rem;
+.route-panel {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  width: 300px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  max-height: calc(100% - 90px);
+  display: flex;
+  flex-direction: column;
 }
 
-.location-info p {
-  margin-bottom: 0.5rem;
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-@media (max-width: 992px) {
-  .map-container {
-    max-width: 300px;
-  }
+.panel-header h4 {
+  margin: 0;
+  color: #1890ff;
 }
 
-@media (max-width: 768px) {
-  .map-container {
-    max-width: 100%;
-    height: 300px;
-    border-left: none;
-    border-top: 1px solid #ddd;
-  }
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #999;
+}
+
+.days-tabs {
+  display: flex;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn.active {
+  border-bottom-color: #1890ff;
+  color: #1890ff;
+}
+
+.day-details {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.day-summary {
+  padding: 15px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  color: #666;
+  font-size: 14px;
+}
+
+.distance {
+  color: #1890ff;
+  font-weight: bold;
+}
+
+.points-list {
+  padding: 10px 0;
+}
+
+.point-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 15px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all 0.3s;
+}
+
+.point-item:hover {
+  background: #f5f5f5;
+  border-left-color: #1890ff;
+}
+
+.point-item.active {
+  background: #e6f7ff;
+  border-left-color: #1890ff;
+}
+
+.point-marker {
+  margin-right: 10px;
+}
+
+.marker-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: #1890ff;
+  color: white;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.point-info {
+  flex: 1;
+}
+
+.point-name {
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.point-city {
+  font-size: 12px;
+  color: #999;
+}
+
+.empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #999;
+}
+
+.empty-state i {
+  font-size: 48px;
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+
+/* 自定义信息窗口样式 */
+:deep(.custom-info-window) {
+  padding: 0;
+  min-width: 200px;
+}
+
+:deep(.info-header) {
+  background: linear-gradient(135deg, #1890ff, #096dd9);
+  color: white;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+}
+
+:deep(.info-header .point-number) {
+  background: rgba(255,255,255,0.2);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  font-weight: bold;
+}
+
+:deep(.info-header h4) {
+  margin: 0;
+  font-size: 14px;
+}
+
+:deep(.info-body) {
+  padding: 12px;
+  font-size: 12px;
+  color: #666;
+}
+
+:deep(.info-body p) {
+  margin: 4px 0;
+}
+
+:deep(.info-footer) {
+  padding: 8px 12px;
+  border-top: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+:deep(.info-footer button) {
+  background: #1890ff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
 }
 </style>

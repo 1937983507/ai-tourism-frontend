@@ -8,7 +8,12 @@
 </head>
 <body>
     <div id="app"></div>
-    <script src="https://webapi.amap.com/maps?v=2.0&key=80838eddfb922202b289fd1ad6fa4e58"></script>
+    <script type="text/javascript">
+      window._AMapSecurityConfig = {
+        securityJsCode: "a45b8fdd549065da27a9395c8d5d87bd",
+    };
+    </script>
+    <script  type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=80838eddfb922202b289fd1ad6fa4e58&plugin=AMap.Driving,AMap.Adaptor"></script>
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
