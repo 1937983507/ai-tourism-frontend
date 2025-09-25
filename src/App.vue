@@ -97,6 +97,26 @@ export default {
       }
     }
 
+    // 根据会话ID更新地图数据
+    const updateMapFromSessionId = (sessionId) => {
+      console.log("开始刷新")
+      console.log(sessionId)
+      // 从会话列表中查找对应的会话
+      const conversation = sessionList.value.find(session => session.session_id === sessionId)
+      console.log("获取会话", conversation)
+      if (conversation) {
+        // 如果会话有路线数据，传递给地图组件
+        if (conversation.daily_routes) {
+          selectedRouteData.value = {
+            ...conversation,
+            daily_routes: conversation.daily_routes
+          }
+        } else {
+          selectedRouteData.value = null
+        }
+      }
+    }
+
     // // 刷新位置
     // const refreshLocation = () => {
     //   // 实现位置刷新逻辑
@@ -136,7 +156,14 @@ export default {
       
       currentMessages.value.push(userMessage)
       
-      await sendMessageToAI(currentSessionId.value, message, currentMessages, sessionList)
+      // 将消息发送给LLM
+      const result = await sendMessageToAI(currentSessionId.value, message, currentMessages, sessionList)
+      // 只有在 sendMessageToAI 完成后才更新地图
+      if (result.success) {
+        console.log("准备开始刷新")
+        updateMapFromSessionId(currentSessionId.value)
+      }
+
     }
     
     function refreshLocation() {

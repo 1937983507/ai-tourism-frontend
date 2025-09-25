@@ -270,9 +270,9 @@ export default {
         const colors = [
           { primary: '#1890FF', light: '#E6F7FF' }, // 蓝色
           { primary: '#52C41A', light: '#F6FFED' }, // 绿色
-          { primary: '#FAAD14', light: '#FFFBE6' }, // 橙色
+          { primary: '#722ED1', light: '#F9F0FF' },  // 紫色
           { primary: '#F5222D', light: '#FFF1F0' }, // 红色
-          { primary: '#722ED1', light: '#F9F0FF' }  // 紫色
+          { primary: '#FAAD14', light: '#FFFBE6' } // 橙色
         ]
 
 

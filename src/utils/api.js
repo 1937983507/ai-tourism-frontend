@@ -35,6 +35,7 @@ export async function fetchSessionList(sessionList, isLoading) {
     
     if (data.code === 0) {
       sessionList.value = data.data.session_list
+      return { success: true}
     } else {
       console.error('获取会话列表失败:', data.msg)
     }
@@ -55,6 +56,7 @@ export async function fetchSessionList(sessionList, isLoading) {
     //   ]
     //   if (isLoading) isLoading.value = false
     // }, 500)
+
     
   } catch (error) {
     console.error('获取会话列表出错:', error)
@@ -182,9 +184,19 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
 
     // 刷新会话列表
     if (sessionList) {
-      fetchSessionList(sessionList)
+      const res = await fetchSessionList(sessionList)
+      // 会话列表数据刷新完毕后返回
+      if (res.success) {
+        return { success: true}
+      }
     }
 
+    // // 调用回调函数
+    // if (callback) {
+    //   callback(true, data.data)
+    // }
+
+  
   } catch (error) {
     console.error('发送消息出错:', error)
     currentMessages.value.push({
@@ -192,6 +204,9 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
       role: 'assistant',
       content: '抱歉，我暂时无法回复您的消息。错误: ' + error.message
     })
+    // if (callback) {
+    //   callback(false, null)
+    // }
   }
 }
 
