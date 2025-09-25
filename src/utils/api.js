@@ -11,7 +11,7 @@ export function generateUUID() {
 }
 
 // 获取会话列表
-export async function fetchSessionList(sessionList, isLoading) {
+export async function fetchSessionList(sessionList, isLoading, userId) {
   try {
     if (isLoading) isLoading.value = true
     
@@ -23,7 +23,8 @@ export async function fetchSessionList(sessionList, isLoading) {
       },
       body: JSON.stringify({
         page: 1,
-        page_size: 10
+        page_size: 10,
+        user_id: userId
       })
     })
     
@@ -105,7 +106,7 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
 }
 
 // 发送消息到AI助手（流式响应）
-export async function sendMessageToAI(sessionId, message, currentMessages, sessionList) {
+export async function sendMessageToAI(sessionId, message, currentMessages, sessionList, userId) {
   try {
     // 模拟AI回复 - 实际使用时取消注释下面的fetch代码
     const response = await fetch(`${API_BASE_URL}/ai_assistant/chat-stream`, {
@@ -115,7 +116,8 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
       },
       body: JSON.stringify({
         session_id: sessionId,
-        messages: message
+        messages: message,
+        user_id: userId
       })
     })
     
@@ -182,7 +184,7 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
 
     // 刷新会话列表
     if (sessionList) {
-      const res = await fetchSessionList(sessionList)
+      const res = await fetchSessionList(sessionList, false, localStorage.getItem('user_id') )
       // 会话列表数据刷新完毕后返回
       if (res.success) {
         return { success: true}
@@ -231,6 +233,8 @@ export function processStreamedData(data) {
     return messages;
 }
 
+
+
 // 认证相关 API
 // 开关：临时使用本地 Mock 放行（后端就绪后改为 false 恢复真实请求）
 const AUTH_USE_MOCK = false
@@ -239,7 +243,9 @@ export async function login(payload) {
   if (AUTH_USE_MOCK) {
     // 模拟登录成功，返回一个临时 token
     return new Promise(resolve => {
-      setTimeout(() => resolve({ token: 'mock-token-123' }), 200)
+      const phone = (payload && payload.phone) || ''
+      const tail = phone ? phone.slice(-4) : '用户'
+      setTimeout(() => resolve({ token: 'mock-token-123', nickname: `旅行家${tail}` }), 200)
     })
   }
   try {
@@ -251,7 +257,8 @@ export async function login(payload) {
     if (!response.ok) throw new Error('登录请求失败')
     const data = await response.json()
     if (data.code === 0 && data.data && data.data.token) {
-      return { token: data.data.token }
+      console.log("发起登录请求后，返回token:", data.data.token)
+      return data.data
     }
     throw new Error(data.msg || '登录失败')
   } catch (e) {
@@ -278,6 +285,60 @@ export async function register(payload) {
       return { success: true }
     }
     throw new Error(data.msg || '注册失败')
+  } catch (e) {
+    throw e
+  }
+}
+
+export async function logout() {
+  if (AUTH_USE_MOCK) {
+    return new Promise(resolve => setTimeout(() => resolve({ success: true }), 150))
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      }
+    })
+    if (!response.ok) throw new Error('登出请求失败')
+    const data = await response.json()
+    if (data.code === 0) return { success: true }
+    throw new Error(data.msg || '登出失败')
+  } catch (e) {
+    throw e
+  }
+}
+
+// 获取当前登录用户信息
+export async function me() {
+  // console.log("开始尝试获取个人信息")
+  if (AUTH_USE_MOCK) {
+    // 从本地已存手机号推导一个昵称，或返回默认
+    const phone = localStorage.getItem('last_phone') || ''
+    const tail = phone ? phone.slice(-4) : '用户'
+    return new Promise(resolve => setTimeout(() => resolve({
+      user_id: 'u_' + (phone || '0000'),
+      nickname: `旅行家${tail}`,
+      phone
+    }), 150))
+  }
+  try {
+    // console.log("开始发起请求")
+    // console.log(localStorage.getItem('token'))
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('token') || '')
+      }
+    })
+    // console.log(response)
+    if (!response.ok) throw new Error('获取用户信息失败')
+    const data = await response.json()
+    if (data.code === 0 && data.data) return data.data
+    throw new Error(data.msg || '获取用户信息失败')
   } catch (e) {
     throw e
   }

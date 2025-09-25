@@ -19,6 +19,11 @@
           <i class="fas fa-lock"></i>
           <input v-model.trim="form.password" type="password" placeholder="请输入密码" required />
         </div>
+        <label class="remember">
+          <input type="checkbox" v-model="form.remember" />
+          <span class="checkbox-ui"></span>
+          <span>记住密码</span>
+        </label>
         <button class="primary bright-btn" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
           {{ loading ? '登录中...' : '登录' }}
@@ -31,22 +36,37 @@
 </template>
 
 <script>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { login } from '../utils/api.js'
 
 export default {
   name: 'Login',
   setup(_, { emit }) {
-    const form = ref({ phone: '', password: '' })
+    const form = ref({ phone: '', password: '', remember: true })
     const loading = ref(false)
+    const FIRST_DEFAULT_PHONE = '13859211947'
+    const FIRST_DEFAULT_PWD = '123456'
 
     const onSubmit = async () => {
       if (loading.value) return
       loading.value = true
       try {
-        const res = await login(form.value)
+        const res = await login({ phone: form.value.phone, password: form.value.password })
+        // console.log("登录请求后", res)
         if (res && res.token) {
           localStorage.setItem('token', res.token)
+          localStorage.setItem('nickname', res.user.nickname || '')
+          localStorage.setItem('user_id', res.user.user_id || '')
+          localStorage.setItem('avatar', res.user.avatar || '')
+          localStorage.setItem('last_phone', form.value.phone)
+          if (form.value.remember) {
+            localStorage.setItem('remember', '1')
+            localStorage.setItem('remember_pwd', form.value.password)
+          } else {
+            localStorage.removeItem('remember')
+            localStorage.removeItem('remember_pwd')
+          }
+          
           const redirect = new URLSearchParams(location.search).get('redirect') || '/home'
           window.location.replace(redirect)
         }
@@ -56,6 +76,23 @@ export default {
         loading.value = false
       }
     }
+
+    onMounted(() => {
+      const lastPhone = localStorage.getItem('last_phone')
+      const remembered = localStorage.getItem('remember') === '1'
+      const rememberedPwd = localStorage.getItem('remember_pwd')
+      if (!lastPhone) {
+        form.value.phone = FIRST_DEFAULT_PHONE
+        form.value.password = FIRST_DEFAULT_PWD
+        form.value.remember = true
+      } else {
+        form.value.phone = lastPhone
+        form.value.remember = remembered
+        if (remembered && rememberedPwd) {
+          form.value.password = rememberedPwd
+        }
+      }
+    })
 
     return { form, loading, onSubmit }
   }
@@ -129,6 +166,14 @@ input::placeholder { color: #94a3b8; }
 .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; margin-right: 6px; animation: spin .7s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<style scoped>
+.remember { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0 10px 2px; user-select: none; color: #475569; font-size: 13px; }
+.remember input { position: absolute; opacity: 0; width: 0; height: 0; }
+.checkbox-ui { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; display: inline-block; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,.04) inset; }
+.remember input:checked + .checkbox-ui { background: var(--brand-primary); border-color: var(--brand-primary); }
+.remember input:checked + .checkbox-ui::after { content: ""; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: 2px solid #fff; border-top: 0; border-left: 0; transform: rotate(45deg); }
 </style>
 
 

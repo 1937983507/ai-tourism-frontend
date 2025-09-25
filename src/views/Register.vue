@@ -20,6 +20,10 @@
           <input v-model.trim="form.password" type="password" placeholder="设置登录密码" required />
         </div>
         <div class="form-item icon">
+          <i class="fas fa-lock"></i>
+          <input v-model.trim="form.confirm" type="password" placeholder="请再次输入密码" required />
+        </div>
+        <div class="form-item icon">
           <i class="fas fa-user"></i>
           <input v-model.trim="form.nickname" type="text" placeholder="请输入昵称" />
         </div>
@@ -40,16 +44,23 @@ import { register } from '../utils/api.js'
 export default {
   name: 'Register',
   setup() {
-    const form = ref({ phone: '', password: '', nickname: '' })
+    const form = ref({ phone: '', password: '', confirm: '', nickname: '' })
     const loading = ref(false)
 
     const onSubmit = async () => {
       if (loading.value) return
       loading.value = true
       try {
-        const res = await register(form.value)
+        if (form.value.password !== form.value.confirm) {
+          alert('两次输入的密码不一致')
+          return
+        }
+        const res = await register({ phone: form.value.phone, password: form.value.password, nickname: form.value.nickname })
         if (res && res.success) {
           alert('注册成功，请登录')
+          // 将注册手机号写入 last_phone，方便登录页回填；不写入密码
+          localStorage.setItem('last_phone', form.value.phone)
+          localStorage.removeItem('remember_pwd')
           window.location.replace('/login')
         }
       } catch (e) {
