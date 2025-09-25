@@ -40,7 +40,7 @@ export async function fetchSessionList(sessionList, isLoading) {
       console.error('获取会话列表失败:', data.msg)
     }
     
-    // 模拟数据
+    // 示例数据
     // setTimeout(() => {
     //   sessionList.value = [
     //     {
@@ -91,7 +91,7 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
       currentMessages.value = []
     }
     
-    // // 模拟数据
+    // // 示例数据
     // setTimeout(() => {
     //   currentMessages.value = [
     //     { msg_id: "123456", role: "user", content: "你好" },
@@ -180,8 +180,6 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
         currentMessages.value.push(currentMessage);
     }
 
-    // currentMessage.content = renderMarkdown(currentMessage.content); // 拼接新的token
-
     // 刷新会话列表
     if (sessionList) {
       const res = await fetchSessionList(sessionList)
@@ -191,11 +189,6 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
       }
     }
 
-    // // 调用回调函数
-    // if (callback) {
-    //   callback(true, data.data)
-    // }
-
   
   } catch (error) {
     console.error('发送消息出错:', error)
@@ -204,9 +197,6 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
       role: 'assistant',
       content: '抱歉，我暂时无法回复您的消息。错误: ' + error.message
     })
-    // if (callback) {
-    //   callback(false, null)
-    // }
   }
 }
 
