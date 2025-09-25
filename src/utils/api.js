@@ -230,3 +230,55 @@ export function processStreamedData(data) {
 
     return messages;
 }
+
+// 认证相关 API
+// 开关：临时使用本地 Mock 放行（后端就绪后改为 false 恢复真实请求）
+const AUTH_USE_MOCK = false
+
+export async function login(payload) {
+  if (AUTH_USE_MOCK) {
+    // 模拟登录成功，返回一个临时 token
+    return new Promise(resolve => {
+      setTimeout(() => resolve({ token: 'mock-token-123' }), 200)
+    })
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok) throw new Error('登录请求失败')
+    const data = await response.json()
+    if (data.code === 0 && data.data && data.data.token) {
+      return { token: data.data.token }
+    }
+    throw new Error(data.msg || '登录失败')
+  } catch (e) {
+    throw e
+  }
+}
+
+export async function register(payload) {
+  if (AUTH_USE_MOCK) {
+    // 模拟注册成功
+    return new Promise(resolve => {
+      setTimeout(() => resolve({ success: true }), 200)
+    })
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok) throw new Error('注册请求失败')
+    const data = await response.json()
+    if (data.code === 0) {
+      return { success: true }
+    }
+    throw new Error(data.msg || '注册失败')
+  } catch (e) {
+    throw e
+  }
+}
