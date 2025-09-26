@@ -248,8 +248,8 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
             throw new Error('重试发送消息失败')
           }
           
-          // 继续处理流式响应
-          return await processStreamResponse(retryResponse, currentMessages, sessionList)
+          // 继续处理流式响应（传递思考消息ID，避免找不到对应消息）
+          return await processStreamResponse(retryResponse, currentMessages, sessionList, thinkingMessage.msg_id)
         } catch (refreshError) {
           console.error('刷新token失败:', refreshError)
           // 刷新失败，清除本地token并跳转到登录页
@@ -311,16 +311,53 @@ async function processStreamResponse(response, currentMessages, sessionList, thi
   const decoder = new TextDecoder();
   let done = false;
   let data = '';
+  // let chunk = '';
   let hasReceivedContent = false;
 
   while (!done) {
     // 从流中读取数据
     const { value, done: doneReading } = await reader.read();
     done = doneReading;
-    data = decoder.decode(value, { stream: true });
 
+    data = decoder.decode(value, { stream: true });
     // 处理数据并拼接 token
     const messages = processStreamedData(data);
+
+
+    // // 累积分片，避免JSON跨分片解析失败
+    // const decoded = decoder.decode(value, { stream: true });
+    // chunk += decoded;
+
+    // // 仅当包含完整事件边界时再解析（例如出现"\n\n"或多次"data:")
+    // // 先以双换行切分SSE事件块
+    // const eventBlocks = chunk.split(/\n\n+/);
+    // // 最后一块可能是不完整的，暂存回 chunk
+    // chunk = eventBlocks.pop() || '';
+
+    // for (const block of eventBlocks) {
+    //   const messages = processStreamedData(block);
+    //   for (let msg of messages) {
+    //     if (!hasReceivedContent) {
+    //       clearTimeout(thinkingTimeout);
+    //       const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+    //       if (messageIndex !== -1) {
+    //         if (msg.includes('免费API对模型输入有') || msg.includes('token上限') || msg.includes('十分抱歉')) {
+    //           currentMessages.value[messageIndex].content = `⚠️ ${msg}`;
+    //         } else {
+    //           currentMessages.value[messageIndex].content = msg;
+    //         }
+    //         currentMessages.value = [...currentMessages.value];
+    //       }
+    //       hasReceivedContent = true;
+    //     } else {
+    //       const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+    //       if (messageIndex !== -1) {
+    //         currentMessages.value[messageIndex].content += msg;
+    //         currentMessages.value = [...currentMessages.value];
+    //       }
+    //     }
+    //   }
+    // }
 
     // 更新当前消息的 content
     for (let msg of messages) {
@@ -352,6 +389,16 @@ async function processStreamResponse(response, currentMessages, sessionList, thi
     }
   }
 
+  // // 如果流结束仍未收到任何内容，替换友好提示，避免停留在思考中
+  // if (!hasReceivedContent) {
+  //   clearTimeout(thinkingTimeout);
+  //   const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+  //   if (messageIndex !== -1) {
+  //     currentMessages.value[messageIndex].content = '抱歉，这次没有收到内容，请稍后重试。';
+  //     currentMessages.value = [...currentMessages.value];
+  //   }
+  // }
+
   // 刷新会话列表
   if (sessionList) {
     const res = await fetchSessionList(sessionList, false, localStorage.getItem('user_id'))
@@ -367,6 +414,7 @@ export function processStreamedData(data) {
     // console.log("data:", data)
     let messages = [];
     const parts = data.split('data:'); // 分割每一行的响应
+    console.log(parts)
     for (let part of parts) {
         // 跳过空行
         if (part.trim() === '') continue;
