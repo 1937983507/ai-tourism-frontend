@@ -16,7 +16,18 @@
           <div class="message-text" v-html="renderMarkdown(message.content)"></div>
         </template>
         <template v-else>
+          <!-- 思考中状态 -->
+          <div v-if="isThinking(message)" class="thinking-indicator">
+            <div class="thinking-dots">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+            <span class="thinking-text">{{ getThinkingText(message.content) }}</span>
+          </div>
+          <!-- 正常消息内容 -->
           <div 
+            v-else
             class="message-text markdown-content" 
             v-html="renderMarkdown(message.content)"
           ></div>
@@ -27,11 +38,12 @@
       <input 
         type="text" 
         v-model="newMessage" 
-        placeholder="输入消息..."
+        :placeholder="inputPlaceholder"
         @keyup.enter="handleSendMessage"
-        :disabled="!currentSessionId"
+        @focus="handleInputFocus"
+        :disabled="false"
       >
-      <button @click="handleSendMessage" :disabled="!currentSessionId">
+      <button @click="handleSendMessage" :disabled="!newMessage.trim()">
         <i class="fas fa-paper-plane"></i> 发送
       </button>
     </div>
@@ -39,7 +51,7 @@
 </template>
 
 <script>
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, computed } from 'vue'
 import { marked } from 'marked'
 
 export default {
@@ -49,10 +61,35 @@ export default {
     messages: Array,
     currentSessionId: String
   },
-  emits: ['send-message'],
+  emits: ['send-message', 'input-focus'],
   setup(props, { emit }) {
     const newMessage = ref('')
     const messagesContainer = ref(null)
+    
+    // 动态占位符文本
+    const inputPlaceholder = computed(() => {
+      if (!props.currentSessionId) {
+        return '点击开始规划您的旅行...'
+      }
+      return '告诉我您的旅行需求...'
+    })
+    
+    // 判断是否为思考中状态
+    const isThinking = (message) => {
+      return message.role === 'assistant' && 
+             (message.content === '思考中...' ||
+              message.content === '正在深入思考中，请稍候...' ||
+              message.content.startsWith('思考中') ||
+              message.content.startsWith('正在深入思考'))
+    }
+
+    // 获取思考状态文本
+    const getThinkingText = (content) => {
+      if (content === '正在深入思考中，请稍候...') {
+        return '正在深入思考中，请稍候...'
+      }
+      return '正在思考中...'
+    }
 
 
    // 创建自定义渲染器
@@ -97,12 +134,16 @@ export default {
     }
 
     function handleSendMessage() {
-      if (!newMessage.value.trim() || !props.currentSessionId) return
+      if (!newMessage.value.trim()) return
       
       emit('send-message', newMessage.value.trim())
       newMessage.value = ''
       
       scrollToBottom()
+    }
+
+    function handleInputFocus() {
+      emit('input-focus')
     }
 
     function scrollToBottom() {
@@ -120,8 +161,12 @@ export default {
     return {
       newMessage,
       messagesContainer,
+      inputPlaceholder,
       handleSendMessage,
-      renderMarkdown
+      handleInputFocus,
+      renderMarkdown,
+      isThinking,
+      getThinkingText
     }
   }
 }
@@ -240,5 +285,65 @@ export default {
   margin: 1rem 0;
   padding: 1rem 1.5rem;
   border-radius: 0 6px 6px 0;
+}
+
+/* 思考中指示器样式 */
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.thinking-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.thinking-dots .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #3498db;
+  animation: thinking-bounce 1.4s ease-in-out infinite both;
+}
+
+.thinking-dots .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.thinking-dots .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.thinking-dots .dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.thinking-text {
+  color: #666;
+  font-size: 14px;
+  font-style: italic;
+  animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 </style>
