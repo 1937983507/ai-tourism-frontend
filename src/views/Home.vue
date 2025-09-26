@@ -154,8 +154,12 @@ export default {
       if (!message.trim() || !currentSessionId.value) return
       const userMessage = { msg_id: generateUUID(), role: 'user', content: message }
       currentMessages.value.push(userMessage)
+      
+      // 强制触发响应式更新
+      currentMessages.value = [...currentMessages.value]
+      
       const result = await sendMessageToAI(currentSessionId.value, message, currentMessages, sessionList, localStorage.getItem('user_id'))
-      if (result.success) {
+      if (result && result.success) {
         updateMapFromSessionId(currentSessionId.value)
       }
     }

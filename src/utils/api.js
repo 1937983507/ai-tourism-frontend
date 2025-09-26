@@ -10,53 +10,6 @@ export function generateUUID() {
   })
 }
 
-// 处理流式响应
-async function processStreamResponse(response, currentMessages, sessionList) {
-  // 创建AI消息对象
-  const currentMessage = {
-    msg_id: generateUUID(),
-    role: 'assistant',
-    content: '思考中...\n'
-  }
-  
-  // 添加到消息列表
-  currentMessages.value.push(currentMessage)
-
-  // 流式响应处理
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let done = false;
-  let data = '';
-
-  while (!done) {
-    // 从流中读取数据
-    const { value, done: doneReading } = await reader.read();
-    done = doneReading;
-    data = decoder.decode(value, { stream: true });
-
-    // 处理数据并拼接 token
-    const messages = processStreamedData(data);
-
-    // 更新当前消息的 content
-    for (let msg of messages) {
-      currentMessage.content += msg; // 拼接新的token
-    }
-
-    // 更新消息列表（只有当消息完整时才加入列表）
-    currentMessages.value = currentMessages.value.filter(m => m.msg_id !== currentMessage.msg_id); // 确保不会重复添加
-    currentMessages.value.push(currentMessage);
-  }
-
-  // 刷新会话列表
-  if (sessionList) {
-    const res = await fetchSessionList(sessionList, false, localStorage.getItem('user_id'))
-    // 会话列表数据刷新完毕后返回
-    if (res.success) {
-      return { success: true}
-    }
-  }
-}
-
 
 // 获取会话列表
 export async function fetchSessionList(sessionList, isLoading, userId) {
@@ -236,6 +189,17 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
 // 发送消息到AI助手（流式响应）
 export async function sendMessageToAI(sessionId, message, currentMessages, sessionList, userId) {
   try {
+    // 立即添加思考状态消息
+    const thinkingMessage = {
+      msg_id: generateUUID(),
+      role: 'assistant',
+      content: '思考中...'
+    };
+    currentMessages.value.push(thinkingMessage);
+    
+    // 强制触发响应式更新
+    currentMessages.value = [...currentMessages.value];
+
     const requestBody = {
       session_id: sessionId,
       messages: message,
@@ -300,17 +264,96 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
       }
     }
     
-    // 继续处理流式响应
-    return await processStreamResponse(response, currentMessages, sessionList)
+    // 继续处理流式响应，传递思考消息的ID
+    return await processStreamResponse(response, currentMessages, sessionList, thinkingMessage.msg_id)
 
   
   } catch (error) {
     console.error('发送消息出错:', error)
-    currentMessages.value.push({
-      msg_id: generateUUID(),
-      role: 'assistant',
-      content: '抱歉，我暂时无法回复您的消息。错误: ' + error.message
-    })
+    // 如果已经有思考消息，更新它；否则创建新的错误消息
+    const existingThinkingMessage = currentMessages.value.find(m => m.role === 'assistant' && m.content === '思考中...');
+    if (existingThinkingMessage) {
+      existingThinkingMessage.content = '抱歉，我暂时无法回复您的消息。错误: ' + error.message;
+    } else {
+      currentMessages.value.push({
+        msg_id: generateUUID(),
+        role: 'assistant',
+        content: '抱歉，我暂时无法回复您的消息。错误: ' + error.message
+      });
+    }
+  }
+}
+
+// 处理流式响应
+async function processStreamResponse(response, currentMessages, sessionList, thinkingMessageId) {
+  // 找到已存在的思考消息
+  const currentMessage = currentMessages.value.find(m => m.msg_id === thinkingMessageId);
+  if (!currentMessage) {
+    console.error('找不到思考消息');
+    return;
+  }
+
+  // 设置超时处理，如果长时间没有响应，显示更友好的提示
+  const thinkingTimeout = setTimeout(() => {
+    if (currentMessage.content === '思考中...') {
+      // 强制触发响应式更新
+      const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+      if (messageIndex !== -1) {
+        currentMessages.value[messageIndex].content = '正在深入思考中，请稍候...';
+        // 强制触发响应式更新
+        currentMessages.value = [...currentMessages.value];
+      }
+    }
+  }, 3000); // 3秒后显示更详细的提示
+
+  // 流式响应处理
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let done = false;
+  let data = '';
+  let hasReceivedContent = false;
+
+  while (!done) {
+    // 从流中读取数据
+    const { value, done: doneReading } = await reader.read();
+    done = doneReading;
+    data = decoder.decode(value, { stream: true });
+
+    // 处理数据并拼接 token
+    const messages = processStreamedData(data);
+
+    // 更新当前消息的 content
+    for (let msg of messages) {
+      if (!hasReceivedContent) {
+        // 第一次接收到内容时，清除超时并替换"思考中..."文本
+        clearTimeout(thinkingTimeout);
+        // 强制触发响应式更新
+        const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+        if (messageIndex !== -1) {
+          currentMessages.value[messageIndex].content = msg;
+          // 强制触发响应式更新
+          currentMessages.value = [...currentMessages.value];
+        }
+        hasReceivedContent = true;
+      } else {
+        // 后续内容直接拼接
+        const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
+        if (messageIndex !== -1) {
+          currentMessages.value[messageIndex].content += msg;
+          // 强制触发响应式更新
+          currentMessages.value = [...currentMessages.value];
+        }
+      }
+    }
+  }
+
+  // 刷新会话列表
+  if (sessionList) {
+    const res = await fetchSessionList(sessionList, false, localStorage.getItem('user_id'))
+    // 会话列表数据刷新完毕后返回
+    if (res.success) {
+      return { success: true}
+    }
   }
 }
 

@@ -535,18 +535,18 @@ export default {
 
     // 聚焦到特定点
     const focusOnPoint = (dayIndex, pointIndex) => {
-      console.log(dayIndex, pointIndex);
+      // console.log(dayIndex, pointIndex);
       activePoint.value = pointIndex
       const marker = markers.value[dayIndex][pointIndex]
       if (marker) {
-        console.log(marker)
+        // console.log(marker)
         map.value.setCenter(marker.getPosition(), true, 100)
         map.value.setZoom(15)
       }
 
       // 显示信息窗口
       if (infoWindows.value[dayIndex] && infoWindows.value[dayIndex][pointIndex]) {
-        console.log("先关闭所有窗口");
+        // console.log("先关闭所有窗口");
         // 关闭所有其他信息窗口
         infoWindows.value.forEach(dayWindows => {
           dayWindows.forEach((window, index) => {
@@ -554,7 +554,7 @@ export default {
           })
         })
         
-        console.log("再打开当前窗口")
+        // console.log("再打开当前窗口")
         // 打开当前信息窗口
         setTimeout(() => {
           infoWindows.value[dayIndex][pointIndex].open(map.value, marker.getPosition())
