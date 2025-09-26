@@ -38,11 +38,12 @@
       <input 
         type="text" 
         v-model="newMessage" 
-        placeholder="输入消息..."
+        :placeholder="inputPlaceholder"
         @keyup.enter="handleSendMessage"
-        :disabled="!currentSessionId"
+        @focus="handleInputFocus"
+        :disabled="false"
       >
-      <button @click="handleSendMessage" :disabled="!currentSessionId">
+      <button @click="handleSendMessage" :disabled="!newMessage.trim()">
         <i class="fas fa-paper-plane"></i> 发送
       </button>
     </div>
@@ -50,7 +51,7 @@
 </template>
 
 <script>
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, computed } from 'vue'
 import { marked } from 'marked'
 
 export default {
@@ -60,10 +61,18 @@ export default {
     messages: Array,
     currentSessionId: String
   },
-  emits: ['send-message'],
+  emits: ['send-message', 'input-focus'],
   setup(props, { emit }) {
     const newMessage = ref('')
     const messagesContainer = ref(null)
+    
+    // 动态占位符文本
+    const inputPlaceholder = computed(() => {
+      if (!props.currentSessionId) {
+        return '点击开始规划您的旅行...'
+      }
+      return '告诉我您的旅行需求...'
+    })
     
     // 判断是否为思考中状态
     const isThinking = (message) => {
@@ -125,12 +134,16 @@ export default {
     }
 
     function handleSendMessage() {
-      if (!newMessage.value.trim() || !props.currentSessionId) return
+      if (!newMessage.value.trim()) return
       
       emit('send-message', newMessage.value.trim())
       newMessage.value = ''
       
       scrollToBottom()
+    }
+
+    function handleInputFocus() {
+      emit('input-focus')
     }
 
     function scrollToBottom() {
@@ -148,7 +161,9 @@ export default {
     return {
       newMessage,
       messagesContainer,
+      inputPlaceholder,
       handleSendMessage,
+      handleInputFocus,
       renderMarkdown,
       isThinking,
       getThinkingText

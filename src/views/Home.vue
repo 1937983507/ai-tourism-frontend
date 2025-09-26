@@ -24,6 +24,7 @@
         :messages="currentMessages"
         :current-session-id="currentSessionId"
         @send-message="sendMessage"
+        @input-focus="handleInputFocus"
       />
       <MapContainer
         :location="currentLocation"
@@ -141,17 +142,26 @@ export default {
       })
       currentSessionId.value = newSessionId
       currentMessages.value = []
-      setTimeout(() => {
-        currentMessages.value.push({
-          msg_id: generateUUID(),
-          role: 'assistant',
-          content: '您好！这是一个新的对话。我可以为您提供什么帮助？'
-        })
-      }, 500)
+      
+      // 立即添加欢迎消息，不需要延迟
+      currentMessages.value.push({
+        msg_id: generateUUID(),
+        role: 'assistant',
+        content: '您好！我是您的AI旅游生活助手 🌟\n\n我可以为您提供：\n - 🚗 天气及出行建议\n - 📍 个性化旅游路线规划\n - 🎯 景点详细介绍\n\n请告诉我您的需求，比如：\n"请为我生成北京市旅游攻略，有3天2夜时间，我喜欢人文风景"'
+      })
+      
+      // 强制触发响应式更新
+      currentMessages.value = [...currentMessages.value]
     }
 
     async function sendMessage(message) {
-      if (!message.trim() || !currentSessionId.value) return
+      if (!message.trim()) return
+      
+      // 如果没有当前会话，自动创建新会话
+      if (!currentSessionId.value) {
+        await startNewConversation()
+      }
+      
       const userMessage = { msg_id: generateUUID(), role: 'user', content: message }
       currentMessages.value.push(userMessage)
       
@@ -166,6 +176,13 @@ export default {
 
     function refreshLocation() {
       locationUpdateTime.value = new Date().toLocaleTimeString()
+    }
+
+    // 处理输入框焦点事件，自动创建新会话
+    async function handleInputFocus() {
+      if (!currentSessionId.value) {
+        await startNewConversation()
+      }
     }
 
     onMounted(async () => {
@@ -204,6 +221,7 @@ export default {
       startNewConversation,
       sendMessage,
       refreshLocation,
+      handleInputFocus,
       selectedRouteData,
       updateTime,
       displayNickname,
