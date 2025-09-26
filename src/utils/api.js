@@ -330,7 +330,12 @@ async function processStreamResponse(response, currentMessages, sessionList, thi
         // 强制触发响应式更新
         const messageIndex = currentMessages.value.findIndex(m => m.msg_id === currentMessage.msg_id);
         if (messageIndex !== -1) {
-          currentMessages.value[messageIndex].content = msg;
+          // 检查是否是错误消息，如果是则添加特殊样式提示
+          if (msg.includes('免费API对模型输入有') || msg.includes('token上限') || msg.includes('十分抱歉')) {
+            currentMessages.value[messageIndex].content = `⚠️ ${msg}`;
+          } else {
+            currentMessages.value[messageIndex].content = msg;
+          }
           // 强制触发响应式更新
           currentMessages.value = [...currentMessages.value];
         }
@@ -370,10 +375,24 @@ export function processStreamedData(data) {
             // 解析返回的JSON数据
             const jsonData = JSON.parse(part.replace('data: ', ''));
             if (jsonData.choices && jsonData.choices.length > 0) {
-                // 提取返回的text内容
-                const text = jsonData.choices[0].text || '';
-                if (text) {
-                    messages.push(text);
+                // 检查是否有错误信息
+                const choice = jsonData.choices[0];
+                if (choice.text) {
+                    // 检查是否是错误消息
+                    if (choice.text.includes('免费API对模型输入有') || 
+                        choice.text.includes('token上限') ||
+                        choice.text.includes('十分抱歉')) {
+                        // 这是错误消息，直接返回
+                        messages.push(choice.text);
+                    } else {
+                        // 正常内容
+                        messages.push(choice.text);
+                    }
+                }
+                // 检查finish_reason是否为stop且没有text内容（表示流结束）
+                else if (choice.finish_reason === 'stop' && !choice.text) {
+                    // 流结束，不需要处理
+                    continue;
                 }
             }
             else if(jsonData.dailyRoutes && jsonData.dailyRoutes.length > 0) {
