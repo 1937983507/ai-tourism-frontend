@@ -104,6 +104,7 @@ export default {
         const rememberPwd = localStorage.getItem('remember_pwd') || ''
         // 清除会话令牌与昵称
         localStorage.removeItem('token')
+        localStorage.removeItem('refresh_token')
         localStorage.removeItem('nickname')
         // 跳回登录页，并依赖本地存储完成回填（上面已保留 last_phone/remember/remember_pwd）
         window.location.replace('/login')

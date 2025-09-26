@@ -58,6 +58,7 @@ export default {
           localStorage.setItem('nickname', res.user.nickname || '')
           localStorage.setItem('user_id', res.user.user_id || '')
           localStorage.setItem('avatar', res.user.avatar || '')
+          localStorage.setItem('refresh_token', res.refresh_token || '')
           localStorage.setItem('last_phone', form.value.phone)
           if (form.value.remember) {
             localStorage.setItem('remember', '1')
