@@ -14,7 +14,21 @@
       </div>
     </div>
     
-    <div id="map"></div>
+    <div id="map" :class="{ 'loading': isLoading }">
+      <!-- 加载指示器 -->
+      <div v-if="isLoading" class="map-loading-overlay">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <div class="loading-text">{{ loadingText }}</div>
+          <div class="loading-progress" v-if="loadingProgress > 0">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: loadingProgress + '%' }"></div>
+            </div>
+            <div class="progress-text">{{ loadingProgress }}%</div>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <div class="route-panel" v-if="currentRoute">
       <div class="panel-header">
@@ -94,6 +108,12 @@ export default {
     const dayLabels = ref([])
     const satellite = ref(null)
     const polylines = ref([])
+    
+    // 加载状态相关
+    const isLoading = ref(false)
+    const loadingText = ref('正在加载地图...')
+    const loadingProgress = ref(0)
+    const renderTimeout = ref(null)
 
     // 自定义标记图标
     const createMarkerIcon = (number, color = '#1890FF') => {
@@ -250,17 +270,36 @@ export default {
       return path[midIndex]
     }
 
-    // 渲染路线和标记
+    // 防抖渲染函数
+    const debouncedRenderRoute = (routeData) => {
+      if (renderTimeout.value) {
+        clearTimeout(renderTimeout.value)
+      }
+      
+      renderTimeout.value = setTimeout(() => {
+        renderRoute(routeData)
+      }, 300) // 300ms防抖
+    }
+
+    // 渲染路线和标记 - 优化版本
     const renderRoute = async (routeData) => {
       if (!driving.value || !map.value) return
       
-      clearAll()
+      // 开始加载状态
+      isLoading.value = true
+      loadingText.value = '正在解析路线数据...'
+      loadingProgress.value = 0
       
       try {
+        clearAll()
+        
         const parsedData = JSON.parse(routeData.daily_routes)
         const dailyRoutes = parsedData.dailyRoutes
         
-        if (!dailyRoutes || dailyRoutes.length === 0) return
+        if (!dailyRoutes || dailyRoutes.length === 0) {
+          isLoading.value = false
+          return
+        }
         
         currentRoute.value = {
           title: routeData.title,
@@ -275,29 +314,26 @@ export default {
           { primary: '#FAAD14', light: '#FFFBE6' } // 橙色
         ]
 
-
         // 初始化标记和窗口数组
         markers.value = []
         infoWindows.value = []
         
-        let allPoints = [] // 收集所有点用于适应视图
+        // 批量收集所有需要添加的元素
+        const elementsToAdd = []
         
         for (let dayIndex = 0; dayIndex < dailyRoutes.length; dayIndex++) {
-          console.log("当前第"+dayIndex+"天")
-          const dayRoute = dailyRoutes[dayIndex]
-          console.log(dayRoute)
-          const points = dayRoute.points
-          console.log(points)
-          const color = colors[dayIndex % colors.length]
+          loadingText.value = `正在生成第 ${dayIndex + 1} 天路线...`
+          loadingProgress.value = Math.round((dayIndex / dailyRoutes.length) * 80)
           
-          // if (points.length < 2) continue
+          const dayRoute = dailyRoutes[dayIndex]
+          const points = dayRoute.points
+          const color = colors[dayIndex % colors.length]
           
           // 保存当天的景点信息
           const dayInfo = {
             points: points.map(p => ({ keyword: p.keyword, city: p.city })),
             distance: 0
           }
-          console.log(dayInfo);
           
           currentRoute.value.days.push(dayInfo)
           
@@ -305,8 +341,6 @@ export default {
             keyword: point.keyword,
             city: point.city
           }))
-
-          console.log(searchPoints);
           
           await new Promise((resolve) => {
             driving.value.search(searchPoints, (status, result) => {
@@ -328,17 +362,17 @@ export default {
                     strokeWeight: 6,
                     strokeOpacity: 0.8,
                     strokeStyle: 'solid',
-                    strokeDasharray: dayIndex === 0 ? [] : [5, 5] // 第二天开始使用虚线
+                    strokeDasharray: dayIndex === 0 ? [] : [5, 5]
                   })
                   
-                  map.value.add(polyline)
+                  elementsToAdd.push(polyline)
                   polylines.value.push(polyline)
 
                   // 在路线中间添加天数标签
                   const midpoint = getPathMidpoint(path)
                   if (midpoint) {
                     const dayLabel = createDayLabel(dayIndex, midpoint, color.primary)
-                    map.value.add(dayLabel)
+                    elementsToAdd.push(dayLabel)
                     dayLabels.value.push(dayLabel)
                   }
 
@@ -346,7 +380,7 @@ export default {
                   markers.value[dayIndex] = []
                   infoWindows.value[dayIndex] = []
 
-                  // 起点标记
+                  // 创建起点标记
                   const startMarker = new AMap.Marker({
                     position: path[0],
                     content: `
@@ -364,7 +398,6 @@ export default {
                     offset: new AMap.Pixel(-20, -10)
                   })
 
-                  // 信息窗口
                   const startInfoWindow = new AMap.InfoWindow({
                     content: createInfoWindowContent(
                       points[0] || { keyword: '未知地点', city: '未知城市' },
@@ -375,23 +408,20 @@ export default {
                     closeWhenClickMap: true
                   })
                   
-                  // 点击标记显示信息窗口
                   startMarker.on('click', () => {
-                    // 关闭所有信息窗口
                     infoWindows.value.forEach(dayWindows => {
                       dayWindows.forEach(w => w.close())
                     })
                     startInfoWindow.open(map.value, startMarker.getPosition())
                     activeDay.value = dayIndex
-                    activePoint.value = pointIndex
+                    activePoint.value = 0
                   })
                   
-                  map.value.add([startMarker])
+                  elementsToAdd.push(startMarker)
                   infoWindows.value[dayIndex].push(startInfoWindow)  
                   markers.value[dayIndex].push(startMarker)
 
-                  
-                  // 添加标记点
+                  // 添加中间标记点
                   if (result.waypoints && result.waypoints.length > 0) {
                     result.waypoints.forEach((waypoint, pointIndex) => {
                       const marker = new AMap.Marker({
@@ -401,7 +431,6 @@ export default {
                         title: points[pointIndex]?.keyword || '未知地点'
                       })
                       
-                      // 信息窗口
                       const infoWindow = new AMap.InfoWindow({
                         content: createInfoWindowContent(
                           points[pointIndex+1] || { keyword: '未知地点', city: '未知城市' },
@@ -412,27 +441,22 @@ export default {
                         closeWhenClickMap: true
                       })
                       
-                      // 点击标记显示信息窗口
                       marker.on('click', () => {
-                        // 关闭所有信息窗口
                         infoWindows.value.forEach(dayWindows => {
                           dayWindows.forEach(w => w.close())
                         })
                         infoWindow.open(map.value, marker.getPosition())
                         activeDay.value = dayIndex
-                        activePoint.value = pointIndex
+                        activePoint.value = pointIndex + 1
                       })
                       
-                      // map.value.add(marker)
+                      elementsToAdd.push(marker)
                       markers.value[dayIndex].push(marker)
                       infoWindows.value[dayIndex].push(infoWindow)
-                      
-                      allPoints.push(waypoint.location)
                     })
                   }
                   
-              
-                  // 终点标记
+                  // 创建终点标记
                   const endMarker = new AMap.Marker({
                     position: path[path.length - 1],
                     content: `
@@ -450,32 +474,28 @@ export default {
                     offset: new AMap.Pixel(-20, -10)
                   })
 
-                   // 信息窗口
                   const endInfoWindow = new AMap.InfoWindow({
                     content: createInfoWindowContent(
                       points[points.length-1] || { keyword: '未知地点', city: '未知城市' },
                       dayIndex,
-                      markers.value[dayIndex].length
+                      points.length - 1
                     ),
                     offset: new AMap.Pixel(0, -30),
                     closeWhenClickMap: true
                   })
                   
-                  // 点击标记显示信息窗口
                   endMarker.on('click', () => {
-                    // 关闭所有信息窗口
                     infoWindows.value.forEach(dayWindows => {
                       dayWindows.forEach(w => w.close())
                     })
                     endInfoWindow.open(map.value, endMarker.getPosition())
                     activeDay.value = dayIndex
-                    activePoint.value = pointIndex
+                    activePoint.value = points.length - 1
                   })
                   
-                  map.value.add([endMarker])
+                  elementsToAdd.push(endMarker)
                   infoWindows.value[dayIndex].push(endInfoWindow)  
                   markers.value[dayIndex].push(endMarker)
-                  
                 }
                 resolve()
               } else {
@@ -486,11 +506,30 @@ export default {
           })
         }
         
+        // 批量添加所有元素到地图
+        loadingText.value = '正在渲染地图元素...'
+        loadingProgress.value = 85
+        
+        if (elementsToAdd.length > 0) {
+          map.value.add(elementsToAdd)
+        }
+        
         // 适应视图显示所有标记
-        fitToRoutes();
+        loadingText.value = '正在调整地图视图...'
+        loadingProgress.value = 95
+        
+        await nextTick()
+        fitToRoutes()
+        
+        // 完成加载
+        loadingProgress.value = 100
+        setTimeout(() => {
+          isLoading.value = false
+        }, 500)
         
       } catch (error) {
         console.error('路线数据解析失败:', error)
+        isLoading.value = false
       }
     }
 
@@ -583,12 +622,10 @@ export default {
       }
     }
 
-    // 监听routeData变化
+    // 监听routeData变化 - 使用防抖版本
     watch(() => props.routeData, (newVal) => {
       if (newVal && newVal.daily_routes) {
-        nextTick(() => {
-          renderRoute(newVal)
-        })
+        debouncedRenderRoute(newVal)
       } else {
         clearAll()
       }
@@ -603,6 +640,9 @@ export default {
       activeDay,
       activePoint,
       isSatelliteView,
+      isLoading,
+      loadingText,
+      loadingProgress,
       clearAll,
       focusOnPoint,
       highlightPoint,
@@ -655,6 +695,82 @@ export default {
 #map {
   flex: 1;
   min-height: 400px;
+  position: relative;
+}
+
+#map.loading {
+  pointer-events: none;
+}
+
+.map-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.loading-spinner {
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  min-width: 200px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #1890ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.loading-progress {
+  margin-top: 12px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #f0f0f0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1890ff, #40a9ff);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #1890ff;
+  font-weight: 500;
 }
 
 .route-panel {
