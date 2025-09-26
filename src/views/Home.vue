@@ -202,7 +202,8 @@ export default {
       refreshLocation,
       selectedRouteData,
       updateTime,
-      displayNickname
+      displayNickname,
+      showUserMenu
     }
   }
 }
