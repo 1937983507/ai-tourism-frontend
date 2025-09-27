@@ -17,6 +17,12 @@ export default defineConfig({
   server: {
     port: 3001,
     open: true,
-    host: true // 允许外部访问
+    host: true, // 允许外部访问
+    allowedHosts: [
+      'www.aitrip.chat',     // 域名
+      'aitrip.chat',         // 根域名
+      'localhost',           // 本地开发
+      '127.0.0.1'           // 本地IP
+    ]
   }
 })
