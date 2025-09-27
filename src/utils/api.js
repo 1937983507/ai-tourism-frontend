@@ -1,5 +1,6 @@
 // API基础URL
-const API_BASE_URL = 'http://127.0.0.1:8080'
+const API_BASE_URL = 'http://127.0.0.1:8290'
+// const API_BASE_URL = ''
 
 // 生成UUID
 export function generateUUID() {
