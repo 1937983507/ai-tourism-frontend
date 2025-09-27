@@ -426,7 +426,7 @@ export default {
                     result.waypoints.forEach((waypoint, pointIndex) => {
                       const marker = new AMap.Marker({
                         position: waypoint.location,
-                        content: createMarkerIcon(pointIndex + 1, color.primary),
+                        // content: createMarkerIcon(pointIndex + 1, color.primary),
                         offset: new AMap.Pixel(-16, -16),
                         title: points[pointIndex]?.keyword || '未知地点'
                       })
