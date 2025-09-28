@@ -3,10 +3,27 @@
     <div class="map-header">
       <div><i class="fas fa-map-marked-alt"></i> 旅游路线规划</div>
       <div class="map-controls">
-        <button class="control-btn" @click="toggleSatelliteView">
+        <button class="control-btn" @click="toggleSatelliteView" v-if="canShowSatellite">
           <i :class="isSatelliteView ? 'fas fa-map' : 'fas fa-satellite'"></i>
           {{ isSatelliteView ? '街道图' : '卫星图' }}
         </button>
+        <div class="tile-style-dropdown" v-if="canSwitchTileStyle">
+          <button class="control-btn dropdown-btn" @click="toggleTileStyleDropdown">
+            <i class="fas fa-palette"></i>
+            {{ currentTileStyle.name }}
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" v-if="showTileStyleDropdown">
+            <button 
+              v-for="(style, key) in availableTileStyles" 
+              :key="key"
+              :class="['dropdown-item', { active: currentTileStyleKey === key }]"
+              @click="switchTileStyle(key)"
+            >
+              {{ style.name }}
+            </button>
+          </div>
+        </div>
         <button class="control-btn" @click="fitToRoutes">
           <i class="fas fa-expand-alt"></i>
           适应路线
@@ -86,7 +103,9 @@
 </template>
 
 <script>
-import { onMounted, ref, watch, nextTick } from 'vue'
+import { onMounted, ref, watch, nextTick, computed } from 'vue'
+import { MapServiceManager } from '../utils/mapServiceManager.js'
+import { MAP_SERVICES, DEFAULT_MAP_SERVICE, getCurrentMapService, setMapService, isFeatureSupported, getMapConfig } from '../utils/mapConfig.js'
 
 export default {
   name: 'MapContainer',
@@ -97,8 +116,18 @@ export default {
   },
   emits: ['refresh-location'],
   setup(props) {
+    // 地图服务相关
+    const mapServiceManager = ref(new MapServiceManager())
+    const currentMapService = ref(getCurrentMapService())
     const map = ref(null)
     const driving = ref(null)
+    
+    // 调试信息
+    console.log('当前地图服务:', currentMapService.value)
+    console.log('默认地图服务:', DEFAULT_MAP_SERVICE)
+    console.log('localStorage中的mapService:', localStorage.getItem('mapService'))
+    
+    // 路线和UI状态
     const currentRoute = ref(null)
     const activeDay = ref(0)
     const activePoint = ref(null)
@@ -109,11 +138,37 @@ export default {
     const satellite = ref(null)
     const polylines = ref([])
     
+    // 底图样式切换相关
+    const currentTileStyleKey = ref('monochrome')
+    const showTileStyleDropdown = ref(false)
+    const currentTileLayer = ref(null)
+    
     // 加载状态相关
     const isLoading = ref(false)
     const loadingText = ref('正在加载地图...')
     const loadingProgress = ref(0)
     const renderTimeout = ref(null)
+
+    // 计算属性
+    const canShowSatellite = computed(() => {
+      return isFeatureSupported('satellite', currentMapService.value)
+    })
+    
+    const canSwitchTileStyle = computed(() => {
+      return currentMapService.value === MAP_SERVICES.OSM && isFeatureSupported('tileSwitching', currentMapService.value)
+    })
+    
+    const availableTileStyles = computed(() => {
+      if (currentMapService.value === MAP_SERVICES.OSM) {
+        const config = getMapConfig(MAP_SERVICES.OSM)
+        return config.tileLayers || {}
+      }
+      return {}
+    })
+    
+    const currentTileStyle = computed(() => {
+      return availableTileStyles.value[currentTileStyleKey.value] || availableTileStyles.value.monochrome
+    })
 
     // 自定义标记图标
     const createMarkerIcon = (number, color = '#1890FF') => {
@@ -138,54 +193,108 @@ export default {
 
     // 创建天数标签
     const createDayLabel = (dayIndex, position, color) => {
-      return new AMap.Text({
-        text: `第${dayIndex + 1}天`,
-        position: position,
-        style: {
-          'background-color': color,
-          'color': '#fff',
-          'border': '2px solid white',
-          'border-radius': '15px',
-          'padding': '4px 10px',
-          'font-size': '12px',
-          'font-weight': 'bold',
-          'box-shadow': '0 2px 6px rgba(0,0,0,0.3)'
-        },
-        offset: new AMap.Pixel(0, -10)
-      })
+      if (currentMapService.value === MAP_SERVICES.AMAP) {
+        return new AMap.Text({
+          text: `第${dayIndex + 1}天`,
+          position: position,
+          style: {
+            'background-color': color,
+            'color': '#fff',
+            'border': '2px solid white',
+            'border-radius': '15px',
+            'padding': '4px 10px',
+            'font-size': '12px',
+            'font-weight': 'bold',
+            'box-shadow': '0 2px 6px rgba(0,0,0,0.3)'
+          },
+          offset: new AMap.Pixel(0, -10)
+        })
+      } else if (currentMapService.value === MAP_SERVICES.OSM) {
+        // Leaflet文本标记
+        const div = document.createElement('div')
+        div.innerHTML = `第${dayIndex + 1}天`
+        div.style.cssText = `
+          background-color: ${color};
+          color: white;
+          border: 2px solid white;
+          border-radius: 15px;
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: bold;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          white-space: nowrap;
+          pointer-events: none;
+          display: inline-block;
+          min-width: fit-content;
+        `
+        // 确保元素被添加到DOM中以便计算尺寸
+        div.style.visibility = 'hidden'
+        div.style.position = 'absolute'
+        div.style.top = '-9999px'
+        document.body.appendChild(div)
+        const width = div.offsetWidth
+        const height = div.offsetHeight
+        document.body.removeChild(div)
+        
+        // 重置样式，确保标记可见
+        div.style.visibility = 'visible'
+        div.style.position = 'static'
+        div.style.top = 'auto'
+        
+        return L.marker([position[1], position[0]], {
+          icon: L.divIcon({
+            html: div,
+            className: 'custom-day-label',
+            iconSize: [width, height],
+            iconAnchor: [width / 2, height],
+            popupAnchor: [0, -height]
+          })
+        })
+      }
     }
 
 
     // 初始化地图
-    const initMap = () => {
+    const initMap = async () => {
       try {
-        map.value = new AMap.Map('map', {
-          zoom: 12,
-          center: [116.397, 39.905],
-          viewMode: '3D',
-          features: ['bg', 'road', 'building'],
-          mapStyle: 'amap://styles/normal'
-        })
-
-        satellite.value = new AMap.TileLayer.Satellite();
-        map.value.addLayer(satellite.value);
-        satellite.value.hide();
+        isLoading.value = true
+        loadingText.value = '正在初始化地图服务...'
         
-        // 初始化驾车导航插件
-        AMap.plugin(['AMap.Driving', 'AMap.InfoWindow'], () => {
-          driving.value = new AMap.Driving({
-            map: map.value,
-            policy: AMap.DrivingPolicy.LEAST_TIME,
-            hideMarkers: true, // 隐藏默认标记，使用自定义标记
-            showTraffic: true,
-            autoFitView: false
-          })
-        })
+        // 强制使用默认地图服务（如果localStorage中的值不正确）
+        if (currentMapService.value !== DEFAULT_MAP_SERVICE) {
+          console.log('检测到地图服务不匹配，强制使用默认服务:', DEFAULT_MAP_SERVICE)
+          currentMapService.value = DEFAULT_MAP_SERVICE
+          setMapService(DEFAULT_MAP_SERVICE)
+        }
+        
+        const result = await mapServiceManager.value.initMapService(currentMapService.value, 'map')
+        map.value = result.map
+        driving.value = result.routingService
+        
+        // 如果是高德地图，初始化卫星图层
+        if (currentMapService.value === MAP_SERVICES.AMAP && typeof AMap !== 'undefined') {
+          satellite.value = new AMap.TileLayer.Satellite()
+          map.value.addLayer(satellite.value)
+          satellite.value.hide()
+        }
+        
+        // 如果是OSM地图，确保地图正确适应容器
+        if (currentMapService.value === MAP_SERVICES.OSM) {
+          setTimeout(() => {
+            if (map.value && map.value.invalidateSize) {
+              map.value.invalidateSize()
+            }
+          }, 200)
+        }
+        
+        isLoading.value = false
       } catch (error) {
         console.error('地图初始化失败:', error)
+        isLoading.value = false
         showMapError()
       }
     }
+
 
     // 显示地图错误
     const showMapError = () => {
@@ -203,14 +312,18 @@ export default {
 
     // 清除所有标记和路线
     const clearAll = () => {
-      if (driving.value) {
+      if (driving.value && driving.value.clear) {
         driving.value.clear()
       }
       
       // 清除所有标记
       markers.value.forEach(dayMarkers => {
         dayMarkers.forEach(marker => {
-          map.value.remove(marker)
+          if (currentMapService.value === MAP_SERVICES.AMAP) {
+            map.value.remove(marker)
+          } else if (currentMapService.value === MAP_SERVICES.OSM) {
+            map.value.removeLayer(marker)
+          }
         })
       })
       markers.value = []
@@ -218,20 +331,30 @@ export default {
       // 清除所有信息窗口
       infoWindows.value.forEach(dayWindows => {
         dayWindows.forEach(window => {
-          window.close()
+          if (window.close) {
+            window.close()
+          }
         })
       })
       infoWindows.value = []
 
       // 清除所有路线
       polylines.value.forEach(polyline => {
-        map.value.remove(polyline)
+        if (currentMapService.value === MAP_SERVICES.AMAP) {
+          map.value.remove(polyline)
+        } else if (currentMapService.value === MAP_SERVICES.OSM) {
+          map.value.removeLayer(polyline)
+        }
       })
       polylines.value = []
 
       // 清除所有天数标签
       dayLabels.value.forEach(label => {
-        map.value.remove(label)
+        if (currentMapService.value === MAP_SERVICES.AMAP) {
+          map.value.remove(label)
+        } else if (currentMapService.value === MAP_SERVICES.OSM) {
+          map.value.removeLayer(label)
+        }
       })
       dayLabels.value = []
       
@@ -356,14 +479,26 @@ export default {
                     return acc.concat(step.path)
                   }, [])
                   
-                  const polyline = new AMap.Polyline({
-                    path: path,
-                    strokeColor: color.primary,
-                    strokeWeight: 6,
-                    strokeOpacity: 0.8,
-                    strokeStyle: 'solid',
-                    strokeDasharray: dayIndex === 0 ? [] : [5, 5]
-                  })
+                  let polyline
+                  if (currentMapService.value === MAP_SERVICES.AMAP) {
+                    polyline = new AMap.Polyline({
+                      path: path,
+                      strokeColor: color.primary,
+                      strokeWeight: 6,
+                      strokeOpacity: 0.8,
+                      strokeStyle: 'solid',
+                      strokeDasharray: dayIndex === 0 ? [] : [5, 5]
+                    })
+                  } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                    // 转换路径格式为Leaflet格式 [lat, lng]
+                    const leafletPath = path.map(coord => [coord[1], coord[0]])
+                    polyline = L.polyline(leafletPath, {
+                      color: color.primary,
+                      weight: 6,
+                      opacity: 0.8,
+                      dashArray: dayIndex === 0 ? null : '5, 5'
+                    })
+                  }
                   
                   elementsToAdd.push(polyline)
                   polylines.value.push(polyline)
@@ -381,41 +516,106 @@ export default {
                   infoWindows.value[dayIndex] = []
 
                   // 创建起点标记
-                  const startMarker = new AMap.Marker({
-                    position: path[0],
-                    content: `
-                      <div style="
-                        background-color: ${color.primary};
-                        color: white;
-                        padding: 4px 8px;
-                        border-radius: 12px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                        white-space: nowrap;
-                      ">起点</div>
-                    `,
-                    offset: new AMap.Pixel(-20, -10)
-                  })
+                  let startMarker
+                  if (currentMapService.value === MAP_SERVICES.AMAP) {
+                    startMarker = new AMap.Marker({
+                      position: path[0],
+                      content: `
+                        <div style="
+                          background-color: ${color.primary};
+                          color: white;
+                          padding: 4px 8px;
+                          border-radius: 12px;
+                          font-size: 12px;
+                          font-weight: bold;
+                          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                          white-space: nowrap;
+                        ">起点</div>
+                      `,
+                      offset: new AMap.Pixel(-20, -10)
+                    })
+                  } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                    const startDiv = document.createElement('div')
+                    startDiv.innerHTML = '起点'
+                    startDiv.style.cssText = `
+                      background-color: ${color.primary};
+                      color: white;
+                      padding: 6px 12px;
+                      border-radius: 12px;
+                      font-size: 12px;
+                      font-weight: bold;
+                      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                      white-space: nowrap;
+                      display: inline-block;
+                      min-width: fit-content;
+                    `
+                    // 确保元素被添加到DOM中以便计算尺寸
+                    startDiv.style.visibility = 'hidden'
+                    startDiv.style.position = 'absolute'
+                    startDiv.style.top = '-9999px'
+                    document.body.appendChild(startDiv)
+                    const width = startDiv.offsetWidth
+                    const height = startDiv.offsetHeight
+                    document.body.removeChild(startDiv)
+                    
+                    // 重置样式，确保标记可见
+                    startDiv.style.visibility = 'visible'
+                    startDiv.style.position = 'static'
+                    startDiv.style.top = 'auto'
+                    
+                    startMarker = L.marker([path[0][1], path[0][0]], {
+                      icon: L.divIcon({
+                        html: startDiv,
+                        className: 'custom-marker',
+                        iconSize: [width, height],
+                        iconAnchor: [width / 2, height],
+                        popupAnchor: [0, -height]
+                      })
+                    })
+                  }
 
-                  const startInfoWindow = new AMap.InfoWindow({
-                    content: createInfoWindowContent(
+                  let startInfoWindow
+                  if (currentMapService.value === MAP_SERVICES.AMAP) {
+                    startInfoWindow = new AMap.InfoWindow({
+                      content: createInfoWindowContent(
+                        points[0] || { keyword: '未知地点', city: '未知城市' },
+                        dayIndex,
+                        0
+                      ),
+                      offset: new AMap.Pixel(0, -30),
+                      closeWhenClickMap: true
+                    })
+                    
+                    startMarker.on('click', () => {
+                      infoWindows.value.forEach(dayWindows => {
+                        dayWindows.forEach(w => w.close())
+                      })
+                      startInfoWindow.open(map.value, startMarker.getPosition())
+                      activeDay.value = dayIndex
+                      activePoint.value = 0
+                    })
+                  } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                    const popup = L.popup({
+                      closeButton: true,
+                      autoClose: true,
+                      closeOnClick: true
+                    }).setContent(createInfoWindowContent(
                       points[0] || { keyword: '未知地点', city: '未知城市' },
                       dayIndex,
                       0
-                    ),
-                    offset: new AMap.Pixel(0, -30),
-                    closeWhenClickMap: true
-                  })
-                  
-                  startMarker.on('click', () => {
-                    infoWindows.value.forEach(dayWindows => {
-                      dayWindows.forEach(w => w.close())
+                    ))
+                    
+                    startMarker.bindPopup(popup)
+                    startInfoWindow = popup
+                    
+                    startMarker.on('click', () => {
+                      // 关闭其他弹窗
+                      map.value.closePopup()
+                      popup.openOn(map.value)
+                      activeDay.value = dayIndex
+                      activePoint.value = 0
                     })
-                    startInfoWindow.open(map.value, startMarker.getPosition())
-                    activeDay.value = dayIndex
-                    activePoint.value = 0
-                  })
+                  }
                   
                   elementsToAdd.push(startMarker)
                   infoWindows.value[dayIndex].push(startInfoWindow)  
@@ -424,31 +624,61 @@ export default {
                   // 添加中间标记点
                   if (result.waypoints && result.waypoints.length > 0) {
                     result.waypoints.forEach((waypoint, pointIndex) => {
-                      const marker = new AMap.Marker({
-                        position: waypoint.location,
-                        content: createMarkerIcon(pointIndex + 1, color.primary),
-                        offset: new AMap.Pixel(-16, -16),
-                        title: points[pointIndex]?.keyword || '未知地点'
-                      })
+                      let marker
+                      if (currentMapService.value === MAP_SERVICES.AMAP) {
+                        marker = new AMap.Marker({
+                          position: waypoint.location,
+                          offset: new AMap.Pixel(-16, -16),
+                          title: points[pointIndex]?.keyword || '未知地点'
+                        })
+                      } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                        const location = waypoint.location
+                        marker = L.marker([location.lat, location.lng], {
+                          title: points[pointIndex]?.keyword || '未知地点'
+                        })
+                      }
                       
-                      const infoWindow = new AMap.InfoWindow({
-                        content: createInfoWindowContent(
+                      let infoWindow
+                      if (currentMapService.value === MAP_SERVICES.AMAP) {
+                        infoWindow = new AMap.InfoWindow({
+                          content: createInfoWindowContent(
+                            points[pointIndex+1] || { keyword: '未知地点', city: '未知城市' },
+                            dayIndex,
+                            pointIndex+1
+                          ),
+                          offset: new AMap.Pixel(0, -30),
+                          closeWhenClickMap: true
+                        })
+                        
+                        marker.on('click', () => {
+                          infoWindows.value.forEach(dayWindows => {
+                            dayWindows.forEach(w => w.close())
+                          })
+                          infoWindow.open(map.value, marker.getPosition())
+                          activeDay.value = dayIndex
+                          activePoint.value = pointIndex + 1
+                        })
+                      } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                        const popup = L.popup({
+                          closeButton: true,
+                          autoClose: true,
+                          closeOnClick: true
+                        }).setContent(createInfoWindowContent(
                           points[pointIndex+1] || { keyword: '未知地点', city: '未知城市' },
                           dayIndex,
                           pointIndex+1
-                        ),
-                        offset: new AMap.Pixel(0, -30),
-                        closeWhenClickMap: true
-                      })
-                      
-                      marker.on('click', () => {
-                        infoWindows.value.forEach(dayWindows => {
-                          dayWindows.forEach(w => w.close())
+                        ))
+                        
+                        marker.bindPopup(popup)
+                        infoWindow = popup
+                        
+                        marker.on('click', () => {
+                          map.value.closePopup()
+                          popup.openOn(map.value)
+                          activeDay.value = dayIndex
+                          activePoint.value = pointIndex + 1
                         })
-                        infoWindow.open(map.value, marker.getPosition())
-                        activeDay.value = dayIndex
-                        activePoint.value = pointIndex + 1
-                      })
+                      }
                       
                       elementsToAdd.push(marker)
                       markers.value[dayIndex].push(marker)
@@ -457,41 +687,105 @@ export default {
                   }
                   
                   // 创建终点标记
-                  const endMarker = new AMap.Marker({
-                    position: path[path.length - 1],
-                    content: `
-                      <div style="
-                        background-color: ${color.primary};
-                        color: white;
-                        padding: 4px 8px;
-                        border-radius: 12px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                        white-space: nowrap;
-                      ">终点</div>
-                    `,
-                    offset: new AMap.Pixel(-20, -10)
-                  })
+                  let endMarker
+                  if (currentMapService.value === MAP_SERVICES.AMAP) {
+                    endMarker = new AMap.Marker({
+                      position: path[path.length - 1],
+                      content: `
+                        <div style="
+                          background-color: ${color.primary};
+                          color: white;
+                          padding: 4px 8px;
+                          border-radius: 12px;
+                          font-size: 12px;
+                          font-weight: bold;
+                          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                          white-space: nowrap;
+                        ">终点</div>
+                      `,
+                      offset: new AMap.Pixel(-20, -10)
+                    })
+                  } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                    const endDiv = document.createElement('div')
+                    endDiv.innerHTML = '终点'
+                    endDiv.style.cssText = `
+                      background-color: ${color.primary};
+                      color: white;
+                      padding: 6px 12px;
+                      border-radius: 12px;
+                      font-size: 12px;
+                      font-weight: bold;
+                      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                      white-space: nowrap;
+                      display: inline-block;
+                      min-width: fit-content;
+                    `
+                    // 确保元素被添加到DOM中以便计算尺寸
+                    endDiv.style.visibility = 'hidden'
+                    endDiv.style.position = 'absolute'
+                    endDiv.style.top = '-9999px'
+                    document.body.appendChild(endDiv)
+                    const width = endDiv.offsetWidth
+                    const height = endDiv.offsetHeight
+                    document.body.removeChild(endDiv)
+                    
+                    // 重置样式，确保标记可见
+                    endDiv.style.visibility = 'visible'
+                    endDiv.style.position = 'static'
+                    endDiv.style.top = 'auto'
+                    
+                    endMarker = L.marker([path[path.length - 1][1], path[path.length - 1][0]], {
+                      icon: L.divIcon({
+                        html: endDiv,
+                        className: 'custom-marker',
+                        iconSize: [width, height],
+                        iconAnchor: [width / 2, height],
+                        popupAnchor: [0, -height]
+                      })
+                    })
+                  }
 
-                  const endInfoWindow = new AMap.InfoWindow({
-                    content: createInfoWindowContent(
+                  let endInfoWindow
+                  if (currentMapService.value === MAP_SERVICES.AMAP) {
+                    endInfoWindow = new AMap.InfoWindow({
+                      content: createInfoWindowContent(
+                        points[points.length-1] || { keyword: '未知地点', city: '未知城市' },
+                        dayIndex,
+                        points.length - 1
+                      ),
+                      offset: new AMap.Pixel(0, -30),
+                      closeWhenClickMap: true
+                    })
+                    
+                    endMarker.on('click', () => {
+                      infoWindows.value.forEach(dayWindows => {
+                        dayWindows.forEach(w => w.close())
+                      })
+                      endInfoWindow.open(map.value, endMarker.getPosition())
+                      activeDay.value = dayIndex
+                      activePoint.value = points.length - 1
+                    })
+                  } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                    const popup = L.popup({
+                      closeButton: true,
+                      autoClose: true,
+                      closeOnClick: true
+                    }).setContent(createInfoWindowContent(
                       points[points.length-1] || { keyword: '未知地点', city: '未知城市' },
                       dayIndex,
                       points.length - 1
-                    ),
-                    offset: new AMap.Pixel(0, -30),
-                    closeWhenClickMap: true
-                  })
-                  
-                  endMarker.on('click', () => {
-                    infoWindows.value.forEach(dayWindows => {
-                      dayWindows.forEach(w => w.close())
+                    ))
+                    
+                    endMarker.bindPopup(popup)
+                    endInfoWindow = popup
+                    
+                    endMarker.on('click', () => {
+                      map.value.closePopup()
+                      popup.openOn(map.value)
+                      activeDay.value = dayIndex
+                      activePoint.value = points.length - 1
                     })
-                    endInfoWindow.open(map.value, endMarker.getPosition())
-                    activeDay.value = dayIndex
-                    activePoint.value = points.length - 1
-                  })
+                  }
                   
                   elementsToAdd.push(endMarker)
                   infoWindows.value[dayIndex].push(endInfoWindow)  
@@ -511,7 +805,15 @@ export default {
         loadingProgress.value = 85
         
         if (elementsToAdd.length > 0) {
-          map.value.add(elementsToAdd)
+          if (currentMapService.value === MAP_SERVICES.AMAP) {
+            map.value.add(elementsToAdd)
+          } else if (currentMapService.value === MAP_SERVICES.OSM) {
+            elementsToAdd.forEach(element => {
+              if (element.addTo) {
+                element.addTo(map.value)
+              }
+            })
+          }
         }
         
         // 适应视图显示所有标记
@@ -535,32 +837,37 @@ export default {
 
     // 聚焦到特定点
     const focusOnPoint = (dayIndex, pointIndex) => {
-      // console.log(dayIndex, pointIndex);
       activePoint.value = pointIndex
       const marker = markers.value[dayIndex][pointIndex]
       if (marker) {
-        // console.log(marker)
-        map.value.setCenter(marker.getPosition(), true, 100)
-        map.value.setZoom(15)
+        if (currentMapService.value === MAP_SERVICES.AMAP) {
+          map.value.setCenter(marker.getPosition(), true, 100)
+          map.value.setZoom(15)
+        } else if (currentMapService.value === MAP_SERVICES.OSM) {
+          const position = marker.getLatLng()
+          map.value.setView(position, 15)
+        }
       }
 
       // 显示信息窗口
       if (infoWindows.value[dayIndex] && infoWindows.value[dayIndex][pointIndex]) {
-        // console.log("先关闭所有窗口");
         // 关闭所有其他信息窗口
         infoWindows.value.forEach(dayWindows => {
           dayWindows.forEach((window, index) => {
-            if(window) window.close()
+            if(window && window.close) window.close()
           })
         })
         
-        // console.log("再打开当前窗口")
         // 打开当前信息窗口
         setTimeout(() => {
-          infoWindows.value[dayIndex][pointIndex].open(map.value, marker.getPosition())
+          const infoWindow = infoWindows.value[dayIndex][pointIndex]
+          if (currentMapService.value === MAP_SERVICES.AMAP) {
+            infoWindow.open(map.value, marker.getPosition())
+          } else if (currentMapService.value === MAP_SERVICES.OSM) {
+            infoWindow.openOn(map.value)
+          }
         }, 100)
       }
-
     }
 
     // 高亮标记点
@@ -575,11 +882,13 @@ export default {
 
     // 切换卫星视图
     const toggleSatelliteView = () => {
-      isSatelliteView.value = !isSatelliteView.value
-      if(isSatelliteView.value){
-        satellite.value.show();
-      }else{
-        satellite.value.hide();
+      if (currentMapService.value === MAP_SERVICES.AMAP && satellite.value) {
+        isSatelliteView.value = !isSatelliteView.value
+        if(isSatelliteView.value){
+          satellite.value.show();
+        }else{
+          satellite.value.hide();
+        }
       }
     }
 
@@ -598,13 +907,21 @@ export default {
             
             for (let j = 0; j < markerGroup.length; j++) {
                 const marker = markerGroup[j];
-                const position = marker.getPosition();
+                let position
                 
-                // 更新边界值
-                minLng = Math.min(minLng, position.lng);
-                minLat = Math.min(minLat, position.lat);
-                maxLng = Math.max(maxLng, position.lng);
-                maxLat = Math.max(maxLat, position.lat);
+                if (currentMapService.value === MAP_SERVICES.AMAP) {
+                  position = marker.getPosition();
+                  minLng = Math.min(minLng, position.lng);
+                  minLat = Math.min(minLat, position.lat);
+                  maxLng = Math.max(maxLng, position.lng);
+                  maxLat = Math.max(maxLat, position.lat);
+                } else if (currentMapService.value === MAP_SERVICES.OSM) {
+                  position = marker.getLatLng();
+                  minLng = Math.min(minLng, position.lng);
+                  minLat = Math.min(minLat, position.lat);
+                  maxLng = Math.max(maxLng, position.lng);
+                  maxLat = Math.max(maxLat, position.lat);
+                }
             }
         }
         
@@ -613,12 +930,18 @@ export default {
             return null; // 或者返回默认范围
         }
 
-        let lng = maxLng-minLng;
-        let lat = maxLat-minLat;
-
-        var mybounds = new AMap.Bounds([minLng-lng*0.4, minLat-lat*0.4], [maxLng+lng*0.4, maxLat+lat*0.4]);
-        map.value.setBounds(mybounds);
-        
+        if (currentMapService.value === MAP_SERVICES.AMAP) {
+          let lng = maxLng-minLng;
+          let lat = maxLat-minLat;
+          var mybounds = new AMap.Bounds([minLng-lng*0.4, minLat-lat*0.4], [maxLng+lng*0.4, maxLat+lat*0.4]);
+          map.value.setBounds(mybounds);
+        } else if (currentMapService.value === MAP_SERVICES.OSM) {
+          const bounds = L.latLngBounds(
+            L.latLng(minLat - (maxLat - minLat) * 0.2, minLng - (maxLng - minLng) * 0.2),
+            L.latLng(maxLat + (maxLat - minLat) * 0.2, maxLng + (maxLng - minLng) * 0.2)
+          );
+          map.value.fitBounds(bounds);
+        }
       }
     }
 
@@ -630,6 +953,41 @@ export default {
         clearAll()
       }
     })
+
+
+    // 切换底图样式下拉菜单
+    const toggleTileStyleDropdown = () => {
+      showTileStyleDropdown.value = !showTileStyleDropdown.value
+    }
+
+    // 切换底图样式
+    const switchTileStyle = async (styleKey) => {
+      if (currentMapService.value === MAP_SERVICES.OSM && map.value) {
+        try {
+          const style = availableTileStyles.value[styleKey]
+          if (style) {
+            // 移除当前底图图层
+            if (currentTileLayer.value) {
+              map.value.removeLayer(currentTileLayer.value)
+            }
+            
+            // 添加新的底图图层
+            currentTileLayer.value = L.tileLayer(style.url, {
+              attribution: style.attribution,
+              maxZoom: style.maxZoom || 19
+            })
+            
+            currentTileLayer.value.addTo(map.value)
+            currentTileStyleKey.value = styleKey
+            showTileStyleDropdown.value = false
+            
+            console.log('底图样式已切换为:', style.name)
+          }
+        } catch (error) {
+          console.error('切换底图样式失败:', error)
+        }
+      }
+    }
 
     onMounted(() => {
       initMap()
@@ -643,11 +1001,20 @@ export default {
       isLoading,
       loadingText,
       loadingProgress,
+      currentMapService,
+      canShowSatellite,
+      canSwitchTileStyle,
+      availableTileStyles,
+      currentTileStyle,
+      currentTileStyleKey,
+      showTileStyleDropdown,
       clearAll,
       focusOnPoint,
       highlightPoint,
       unhighlightPoint,
       toggleSatelliteView,
+      toggleTileStyleDropdown,
+      switchTileStyle,
       fitToRoutes
     }
   }
@@ -675,7 +1042,9 @@ export default {
 .map-controls {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
+
 
 .control-btn {
   background: rgba(255,255,255,0.2);
@@ -692,10 +1061,81 @@ export default {
   background: rgba(255,255,255,0.3);
 }
 
+/* 底图样式切换下拉菜单 */
+.tile-style-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dropdown-btn .fas.fa-chevron-down {
+  font-size: 10px;
+  transition: transform 0.3s;
+}
+
+.dropdown-btn:hover .fas.fa-chevron-down {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  min-width: 150px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 10px 15px;
+  border: none;
+  background: none;
+  text-align: left;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background-color: #f5f5f5;
+}
+
+.dropdown-item.active {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  font-weight: bold;
+}
+
+.dropdown-item.active::after {
+  content: "✓";
+  float: right;
+  color: #1890ff;
+}
+
 #map {
   flex: 1;
   min-height: 400px;
   position: relative;
+  overflow: hidden;
+  border-radius: 8px;
 }
 
 #map.loading {
@@ -712,7 +1152,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 10000;
   backdrop-filter: blur(2px);
 }
 
@@ -784,6 +1224,7 @@ export default {
   max-height: calc(100% - 90px);
   display: flex;
   flex-direction: column;
+  z-index: 1000;
 }
 
 .panel-header {
@@ -968,5 +1409,84 @@ export default {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+}
+
+/* Leaflet地图样式调整 */
+:deep(.leaflet-container) {
+  height: 100%;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.leaflet-control-container) {
+  z-index: 100;
+}
+
+:deep(.leaflet-popup) {
+  z-index: 1000;
+}
+
+:deep(.leaflet-marker-icon) {
+  z-index: 500;
+}
+
+/* 隐藏Leaflet默认定位点图标 */
+:deep(.leaflet-default-icon) {
+  display: none !important;
+}
+
+:deep(.leaflet-marker-icon:not(.custom-marker):not(.custom-day-label)) {
+  display: none !important;
+}
+
+/* 确保自定义标记显示 */
+:deep(.leaflet-marker-icon.custom-marker),
+:deep(.leaflet-marker-icon.custom-day-label) {
+  display: block !important;
+}
+
+/* 自定义标记样式优化 */
+:deep(.custom-marker) {
+  background: transparent !important;
+  border: none !important;
+}
+
+:deep(.custom-day-label) {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* 确保自定义标记内容正确显示 */
+:deep(.custom-marker div),
+:deep(.custom-day-label div) {
+  position: relative;
+  z-index: 1000;
+}
+
+/* 确保标记在地图缩放时保持稳定 */
+:deep(.leaflet-marker-icon.custom-marker),
+:deep(.leaflet-marker-icon.custom-day-label) {
+  transform-origin: center bottom;
+  transition: none;
+}
+
+/* 防止标记在缩放时漂移 */
+:deep(.leaflet-zoom-animated .leaflet-marker-icon.custom-marker),
+:deep(.leaflet-zoom-animated .leaflet-marker-icon.custom-day-label) {
+  transform: none !important;
+}
+
+/* 确保自定义标记可见 */
+:deep(.custom-marker),
+:deep(.custom-day-label) {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+:deep(.custom-marker div),
+:deep(.custom-day-label div) {
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 </style>
