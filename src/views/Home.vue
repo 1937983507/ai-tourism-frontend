@@ -1,7 +1,7 @@
 <template>
   <div id="home">
     <header class="header">
-      <h1><i class="fas fa-comments"></i> AI 旅游生活助手</h1>
+      <h1><i class="fas fa-comments"></i> AI 智能旅游规划助手 </h1>
       <div class="user-info" @click="toggleUserMenu">
         <span class="nickname">{{ displayNickname }}</span>
         <i class="fas fa-caret-down"></i>
