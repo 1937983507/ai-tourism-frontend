@@ -153,7 +153,8 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
         
         const retryData = await retryResponse.json()
         if (retryData.code === 0) {
-          currentMessages.value = retryData.data
+          currentMessages.value = retryData.data.history_list
+          
         } else {
           console.error('重试获取会话历史失败:', retryData.msg)
           currentMessages.value = []
@@ -168,7 +169,7 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
         return
       }
     } else if (data.code === 0) {
-      currentMessages.value = data.data
+      currentMessages.value = data.data.history_list
     } else {
       console.error('获取会话历史失败:', data.msg)
       currentMessages.value = []
