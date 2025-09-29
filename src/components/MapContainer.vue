@@ -680,7 +680,7 @@ export default {
                         })
                       }
                       
-                      elementsToAdd.push(marker)
+                      // elementsToAdd.push(marker)
                       markers.value[dayIndex].push(marker)
                       infoWindows.value[dayIndex].push(infoWindow)
                     })
