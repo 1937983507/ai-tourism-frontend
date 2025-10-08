@@ -13,13 +13,13 @@ export function generateUUID() {
 
 
 // 获取会话列表
-export async function fetchSessionList(sessionList, isLoading, userId) {
+export async function fetchSessionList(sessionList, isLoading, userId, page = 1, pageSize = 10, append = false) {
   try {
     if (isLoading) isLoading.value = true
     
     const requestBody = {
-      page: 1,
-      page_size: 10,
+      page: page,
+      page_size: pageSize,
       user_id: userId
     }
     const header = {
@@ -62,8 +62,14 @@ export async function fetchSessionList(sessionList, isLoading, userId) {
         
         const retryData = await retryResponse.json()
         if (retryData.code === 0) {
-          sessionList.value = retryData.data.session_list
-          return { success: true}
+          const list = retryData.data.session_list || []
+          if (append) {
+            sessionList.value = [...(sessionList.value || []), ...list]
+          } else {
+            sessionList.value = list
+          }
+          const hasMore = Array.isArray(list) && list.length === pageSize
+          return { success: true, hasMore }
         } else {
           console.error('重试获取会话列表失败:', retryData.msg)
         }
@@ -77,8 +83,14 @@ export async function fetchSessionList(sessionList, isLoading, userId) {
         return
       }
     } else if (data.code === 0) {
-      sessionList.value = data.data.session_list
-      return { success: true}
+      const list = data.data.session_list || []
+      if (append) {
+        sessionList.value = [...(sessionList.value || []), ...list]
+      } else {
+        sessionList.value = list
+      }
+      const hasMore = Array.isArray(list) && list.length === pageSize
+      return { success: true, hasMore }
     } else {
       console.error('获取会话列表失败:', data.msg)
     }

@@ -11,7 +11,7 @@
       <i class="fas fa-plus"></i> 开启新对话
     </button>
     
-    <div class="conversation-list">
+    <div class="conversation-list" ref="listRef" @scroll="onScroll">
       <div 
         v-for="(conversation, index) in sessionList" 
         :key="index" 
@@ -22,19 +22,68 @@
         <i class="fas fa-comment-dots conversation-icon"></i>
         {{ conversation.title }}
       </div>
+      <div v-if="isLoadingMore" class="loading-more">加载中...</div>
     </div>
   </div>
 </template>
 
 <script>
+import { ref, onMounted, nextTick, watch } from 'vue'
 export default {
   name: 'Sidebar',
   props: {
     isCollapsed: Boolean,
     sessionList: Array,
-    currentSessionId: String
+    currentSessionId: String,
+    hasMore: { type: Boolean, default: true }
   },
-  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation']
+  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation', 'load-more'],
+  setup(props, { emit }) {
+    const listRef = ref(null)
+    const isLoadingMore = ref(false)
+    const autoFillAttempts = ref(0)
+
+    function onScroll(e) {
+      const el = e.target
+      if (!el || isLoadingMore.value) return
+      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
+      if (nearBottom) {
+        isLoadingMore.value = true
+        emit('load-more', () => {
+          isLoadingMore.value = false
+        })
+      }
+    }
+
+    async function ensureScrollable() {
+      await nextTick()
+      const el = listRef.value
+      if (!el) return
+      const canScroll = el.scrollHeight > el.clientHeight + 2
+      if (!canScroll && props.hasMore && !isLoadingMore.value && autoFillAttempts.value < 5) {
+        autoFillAttempts.value += 1
+        isLoadingMore.value = true
+        emit('load-more', async () => {
+          isLoadingMore.value = false
+          await ensureScrollable()
+        })
+      }
+    }
+
+    onMounted(() => {
+      ensureScrollable()
+    })
+
+    watch(() => props.sessionList, () => {
+      ensureScrollable()
+    })
+
+    watch(() => props.hasMore, () => {
+      ensureScrollable()
+    })
+
+    return { listRef, onScroll, isLoadingMore }
+  }
 }
 </script>
 
@@ -104,6 +153,13 @@ export default {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+}
+
+.loading-more {
+  padding: 10px 12px;
+  text-align: center;
+  color: rgba(255,255,255,.8);
+  font-size: 12px;
 }
 
 .conversation-item {

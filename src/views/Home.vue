@@ -1,7 +1,10 @@
 <template>
   <div id="home">
     <header class="header">
-      <h1><i class="fas fa-comments"></i> AI 智能旅游规划助手 </h1>
+      <h1>
+        <img src="/logo-white.svg" alt="logo" style="width:22px;height:22px;display:inline-block;vertical-align:middle;" />
+        AI 智能旅游规划助手 
+      </h1>
       <div class="user-info" @click="toggleUserMenu">
         <span class="nickname">{{ displayNickname }}</span>
         <i class="fas fa-caret-down"></i>
@@ -15,7 +18,9 @@
         :is-collapsed="isSidebarCollapsed"
         :session-list="sessionList"
         :current-session-id="currentSessionId"
+        :has-more="hasMoreSessions"
         @toggle-sidebar="toggleSidebar"
+        @load-more="handleLoadMoreSessions"
         @select-conversation="selectConversation"
         @new-conversation="startNewConversation"
       />
@@ -67,6 +72,9 @@ export default {
     })
 
     const sessionList = ref([])
+    const sessionPage = ref(1)
+    const sessionPageSize = ref(10)
+    const hasMoreSessions = ref(true)
     const currentSessionId = ref(null)
     const currentMessages = ref([])
     const isLoading = ref(false)
@@ -186,7 +194,8 @@ export default {
     }
 
     onMounted(async () => {
-      fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'))
+      const res = await fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'), sessionPage.value, sessionPageSize.value)
+      hasMoreSessions.value = !!(res && res.hasMore)
       // token 未过期直达首页时，尝试刷新昵称
       try {
         // console.log('token 未过期直达首页时，尝试刷新昵称')
@@ -199,6 +208,13 @@ export default {
       }
       document.addEventListener('click', handleClickOutside)
     })
+    async function handleLoadMoreSessions(done) {
+      if (!hasMoreSessions.value) { if (done) done(); return }
+      sessionPage.value += 1
+      const res = await fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'), sessionPage.value, sessionPageSize.value, true)
+      hasMoreSessions.value = !!(res && res.hasMore)
+      if (done) done()
+    }
 
     onBeforeUnmount(() => {
       document.removeEventListener('click', handleClickOutside)
@@ -225,7 +241,8 @@ export default {
       selectedRouteData,
       updateTime,
       displayNickname,
-      showUserMenu
+      showUserMenu,
+      handleLoadMoreSessions
     }
   }
 }
