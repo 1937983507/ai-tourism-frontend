@@ -26,7 +26,14 @@
           @click="$emit('select-conversation', conversation)"
         >
           <i class="fas fa-comment-dots conversation-icon"></i>
-          {{ conversation.title }}
+          <span class="conversation-title">{{ conversation.title }}</span>
+          <div class="ellipsis-wrap" @click.stop>
+            <button class="ellipsis-btn" @click="toggleMenu(conversation.session_id)">···</button>
+            <div class="dropdown" v-if="openMenuId === conversation.session_id">
+              <button class="dropdown-item" @click="emitRename(conversation)">重命名</button>
+              <button class="dropdown-item danger" @click="emitDelete(conversation)">删除</button>
+            </div>
+          </div>
         </div>
       </div>
       <div v-if="isLoadingMore" class="loading-more">加载中...</div>
@@ -35,7 +42,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 export default {
   name: 'Sidebar',
   props: {
@@ -44,11 +51,38 @@ export default {
     currentSessionId: String,
     hasMore: { type: Boolean, default: true }
   },
-  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation', 'load-more'],
+  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation', 'load-more', 'rename-conversation', 'delete-conversation'],
   setup(props, { emit }) {
     const listRef = ref(null)
     const isLoadingMore = ref(false)
     const autoFillAttempts = ref(0)
+    const openMenuId = ref(null)
+
+    function closeMenu() {
+      openMenuId.value = null
+    }
+
+    function toggleMenu(id) {
+      openMenuId.value = openMenuId.value === id ? null : id
+    }
+
+    function onClickOutside(e) {
+      const container = listRef.value
+      if (!container) return
+      if (!container.contains(e.target)) {
+        closeMenu()
+      }
+    }
+
+    function emitRename(conversation) {
+      closeMenu()
+      emit('rename-conversation', conversation)
+    }
+
+    function emitDelete(conversation) {
+      closeMenu()
+      emit('delete-conversation', conversation)
+    }
 
     function parseDateTime(dateTimeStr) {
       if (!dateTimeStr) return null
@@ -149,6 +183,10 @@ export default {
 
     onMounted(() => {
       ensureScrollable()
+      document.addEventListener('click', onClickOutside)
+    })
+    onBeforeUnmount(() => {
+      document.removeEventListener('click', onClickOutside)
     })
 
     watch(() => props.sessionList, () => {
@@ -159,7 +197,7 @@ export default {
       ensureScrollable()
     })
 
-    return { listRef, onScroll, isLoadingMore, groupedSections }
+    return { listRef, onScroll, isLoadingMore, groupedSections, openMenuId, toggleMenu, emitRename, emitDelete }
   }
 }
 </script>
@@ -257,6 +295,7 @@ export default {
   transition: background-color 0.2s, transform .05s ease;
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .conversation-item:hover {
@@ -271,6 +310,17 @@ export default {
   margin-right: 10px;
   font-size: 0.95rem;
 }
+
+.conversation-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ellipsis-wrap { position: relative; display: none; }
+.ellipsis-btn { background: transparent; border: none; color: rgba(255,255,255,.85); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 16px; line-height: 1; }
+.ellipsis-btn:hover { background: rgba(255,255,255,.12); }
+.conversation-item:hover .ellipsis-wrap { display: block; }
+.dropdown { position: absolute; right: 0; top: 22px; min-width: 120px; background: #2f3e4e; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; box-shadow: 0 10px 24px rgba(0,0,0,.24); overflow: hidden; z-index: 5; }
+.dropdown-item { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #fff; padding: 8px 12px; cursor: pointer; }
+.dropdown-item:hover { background: rgba(255,255,255,.08); }
+.dropdown-item.danger:hover { background: rgba(231, 76, 60, .18); }
 
 @media (max-width: 992px) {
   .sidebar {

@@ -119,6 +119,41 @@ export async function fetchSessionList(sessionList, isLoading, userId, page = 1,
   }
 }
 
+// 修改会话属性：支持删除(op_type=2)与改标题(op_type=3)
+export async function modifySession({ sessionId, opType, title }) {
+  const body = {
+    session_id: sessionId,
+    op_type: opType,
+    title: title
+  }
+  const header = {
+    'credentials': 'same-origin',
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer '+localStorage.getItem("token")
+  }
+  const response = await fetch(`${API_BASE_URL}/ai_assistant/session_modify`, {
+    method: 'POST',
+    headers: header,
+    body: JSON.stringify(body)
+  })
+  if (!response.ok) throw new Error('会话修改请求失败')
+  const data = await response.json()
+  if (data.code === 1101 && data.msg === "token已过期，请刷新") {
+    await refreshToken()
+    const retry = await fetch(`${API_BASE_URL}/ai_assistant/session_modify`, {
+      method: 'POST',
+      headers: header,
+      body: JSON.stringify(body)
+    })
+    if (!retry.ok) throw new Error('重试会话修改请求失败')
+    const retryData = await retry.json()
+    if (retryData.code === 0) return { success: true }
+    throw new Error(retryData.msg || '会话修改失败')
+  }
+  if (data.code === 0) return { success: true }
+  throw new Error(data.msg || '会话修改失败')
+}
+
 // 获取会话历史
 export async function fetchConversationHistory(sessionId, currentMessages) {
   try {

@@ -23,6 +23,8 @@
         @load-more="handleLoadMoreSessions"
         @select-conversation="selectConversation"
         @new-conversation="startNewConversation"
+        @rename-conversation="onRenameConversation"
+        @delete-conversation="onDeleteConversation"
       />
       <ChatContainer
         :current-conversation-title="currentConversationTitle"
@@ -53,7 +55,7 @@ import { logout, me } from '../utils/api.js'
 import Sidebar from '../components/Sidebar.vue'
 import ChatContainer from '../components/ChatContainer.vue'
 import MapContainer from '../components/MapContainer.vue'
-import { generateUUID, fetchSessionList, fetchConversationHistory, sendMessageToAI } from '../utils/api.js'
+import { generateUUID, fetchSessionList, fetchConversationHistory, sendMessageToAI, modifySession } from '../utils/api.js'
 import '../assets/style.css'
 
 export default {
@@ -86,6 +88,39 @@ export default {
       const session = sessionList.value.find(s => s.session_id === currentSessionId.value)
       return session ? session.title : '未知对话'
     })
+
+    async function onDeleteConversation(conversation) {
+      if (!conversation || !conversation.session_id) return
+      if (!confirm('确认要删除该会话及其消息吗？此操作不可恢复')) return
+      try {
+        await modifySession({ sessionId: conversation.session_id, opType: 2 })
+        // 前端本地移除
+        sessionList.value = sessionList.value.filter(s => s.session_id !== conversation.session_id)
+        if (currentSessionId.value === conversation.session_id) {
+          currentSessionId.value = null
+          currentMessages.value = []
+          selectedRouteData.value = null
+        }
+      } catch (e) {
+        alert(e.message || '删除失败')
+      }
+    }
+
+    async function onRenameConversation(conversation) {
+      if (!conversation || !conversation.session_id) return
+      const newTitle = prompt('请输入新的标题', conversation.title || '')
+      if (newTitle === null) return
+      const trimmed = newTitle.trim()
+      if (!trimmed) { alert('标题不能为空'); return }
+      try {
+        await modifySession({ sessionId: conversation.session_id, opType: 3, title: trimmed })
+        // 本地更新标题
+        const target = sessionList.value.find(s => s.session_id === conversation.session_id)
+        if (target) target.title = trimmed
+      } catch (e) {
+        alert(e.message || '修改标题失败')
+      }
+    }
 
     function toggleSidebar() {
       isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -244,6 +279,8 @@ export default {
       displayNickname,
       showUserMenu,
       handleLoadMoreSessions
+      , onDeleteConversation
+      , onRenameConversation
     }
   }
 }
