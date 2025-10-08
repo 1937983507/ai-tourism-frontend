@@ -5,7 +5,7 @@ export const MAP_SERVICES = {
 }
 
 // 默认地图服务
-export const DEFAULT_MAP_SERVICE = MAP_SERVICES.OSM   // OSM 或是 AMAP
+export const DEFAULT_MAP_SERVICE = MAP_SERVICES.AMAP   // OSM 或是 AMAP
 
 // 地图服务配置
 export const MAP_CONFIG = {

@@ -207,7 +207,8 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
     const thinkingMessage = {
       msg_id: generateUUID(),
       role: 'assistant',
-      content: '思考中...'
+      content: '思考中...',
+      modifyTime: new Date().toISOString()
     };
     currentMessages.value.push(thinkingMessage);
     

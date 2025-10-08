@@ -16,7 +16,7 @@ export default defineConfig({
   },
   server: {
     port: 3001,
-    open: true,
+    // open: true,
     host: true, // 允许外部访问
     allowedHosts: [
       'www.aitrip.chat',     // 域名

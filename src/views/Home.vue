@@ -155,7 +155,8 @@ export default {
       currentMessages.value.push({
         msg_id: generateUUID(),
         role: 'assistant',
-        content: '您好！我是您的AI旅游生活助手 🌟\n\n我可以为您提供：\n - 🚗 天气及出行建议\n - 📍 个性化旅游路线规划\n - 🎯 景点详细介绍\n\n请告诉我您的需求，比如：\n"请为我生成北京市旅游攻略，有3天2夜时间，我喜欢人文风景"'
+        content: '您好！我是您的AI旅游生活助手 🌟\n\n我可以为您提供：\n - 🚗 天气及出行建议\n - 📍 个性化旅游路线规划\n - 🎯 景点详细介绍\n\n请告诉我您的需求，比如：\n"请为我生成北京市旅游攻略，有3天2夜时间，我喜欢人文风景"',
+        modifyTime: new Date().toISOString()
       })
       
       // 强制触发响应式更新
@@ -170,7 +171,7 @@ export default {
         await startNewConversation()
       }
       
-      const userMessage = { msg_id: generateUUID(), role: 'user', content: message }
+      const userMessage = { msg_id: generateUUID(), role: 'user', content: message, modifyTime: new Date().toISOString() }
       currentMessages.value.push(userMessage)
       
       // 强制触发响应式更新
