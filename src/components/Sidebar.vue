@@ -13,14 +13,21 @@
     
     <div class="conversation-list" ref="listRef" @scroll="onScroll">
       <div 
-        v-for="(conversation, index) in sessionList" 
-        :key="index" 
-        class="conversation-item"
-        :class="{ active: currentSessionId === conversation.session_id }"
-        @click="$emit('select-conversation', conversation)"
+        v-for="section in groupedSections" 
+        :key="section.key"
+        class="conversation-section"
       >
-        <i class="fas fa-comment-dots conversation-icon"></i>
-        {{ conversation.title }}
+        <div class="section-label">{{ section.label }}</div>
+        <div 
+          v-for="(conversation, index) in section.items" 
+          :key="section.key + '-' + index" 
+          class="conversation-item"
+          :class="{ active: currentSessionId === conversation.session_id }"
+          @click="$emit('select-conversation', conversation)"
+        >
+          <i class="fas fa-comment-dots conversation-icon"></i>
+          {{ conversation.title }}
+        </div>
       </div>
       <div v-if="isLoadingMore" class="loading-more">加载中...</div>
     </div>
@@ -28,7 +35,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
 export default {
   name: 'Sidebar',
   props: {
@@ -42,6 +49,76 @@ export default {
     const listRef = ref(null)
     const isLoadingMore = ref(false)
     const autoFillAttempts = ref(0)
+
+    function parseDateTime(dateTimeStr) {
+      if (!dateTimeStr) return null
+      // expected format: YYYY-MM-DD HH:mm:ss
+      const [datePart, timePart] = dateTimeStr.split(' ')
+      if (!datePart) return null
+      const [y, m, d] = datePart.split('-').map(n => parseInt(n, 10))
+      let hh = 0, mm = 0, ss = 0
+      if (timePart) {
+        const parts = timePart.split(':').map(n => parseInt(n, 10))
+        hh = parts[0] || 0; mm = parts[1] || 0; ss = parts[2] || 0
+      }
+      return new Date(y, (m || 1) - 1, d || 1, hh, mm, ss)
+    }
+
+    function isSameDay(a, b) {
+      return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+    }
+
+    function daysDiff(from, to) {
+      // normalize to local midnight
+      const a = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+      const b = new Date(to.getFullYear(), to.getMonth(), to.getDate())
+      const ms = b.getTime() - a.getTime()
+      return Math.round(ms / 86400000)
+    }
+
+    const groupedSections = computed(() => {
+      const now = new Date()
+      const todayItems = []
+      const yesterdayItems = []
+      const sevenDaysItems = []
+      const withinThirtyItems = []
+      const monthGroups = new Map()
+
+      const list = Array.isArray(props.sessionList) ? props.sessionList : []
+      for (const conv of list) {
+        const dt = parseDateTime(conv.last_time)
+        if (!dt) { withinThirtyItems.push(conv); continue }
+        if (isSameDay(dt, now)) {
+          todayItems.push(conv)
+          continue
+        }
+        const diff = daysDiff(dt, now)
+        if (diff === 1) {
+          yesterdayItems.push(conv)
+        } else if (diff > 1 && diff <= 7) {
+          sevenDaysItems.push(conv)
+        } else if (diff > 7 && diff <= 30) {
+          withinThirtyItems.push(conv)
+        } else {
+          const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+          if (!monthGroups.has(ym)) monthGroups.set(ym, [])
+          monthGroups.get(ym).push(conv)
+        }
+      }
+
+      const sections = []
+      if (todayItems.length) sections.push({ key: 'today', label: '今天', items: todayItems })
+      if (yesterdayItems.length) sections.push({ key: 'yesterday', label: '昨天', items: yesterdayItems })
+      if (sevenDaysItems.length) sections.push({ key: 'within7', label: '7天内', items: sevenDaysItems })
+      if (withinThirtyItems.length) sections.push({ key: 'within30', label: '30天内', items: withinThirtyItems })
+
+      // Append monthly sections for >30 days, sorted newest -> oldest
+      const monthKeys = Array.from(monthGroups.keys()).sort((a, b) => b.localeCompare(a))
+      for (const key of monthKeys) {
+        sections.push({ key: `month-${key}`, label: key, items: monthGroups.get(key) })
+      }
+      return sections
+    })
 
     function onScroll(e) {
       const el = e.target
@@ -82,7 +159,7 @@ export default {
       ensureScrollable()
     })
 
-    return { listRef, onScroll, isLoadingMore }
+    return { listRef, onScroll, isLoadingMore, groupedSections }
   }
 }
 </script>
@@ -153,6 +230,16 @@ export default {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+}
+
+.conversation-section {
+  margin-bottom: 10px;
+}
+
+.section-label {
+  color: rgba(255,255,255,.7);
+  font-size: 12px;
+  margin: 8px 0 6px 2px;
 }
 
 .loading-more {
