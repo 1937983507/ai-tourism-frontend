@@ -140,9 +140,14 @@ export async function modifySession({ sessionId, opType, title }) {
   const data = await response.json()
   if (data.code === 1101 && data.msg === "token已过期，请刷新") {
     await refreshToken()
+    const newHeader = {
+      'credentials': 'same-origin',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer '+localStorage.getItem("token")
+    }
     const retry = await fetch(`${API_BASE_URL}/ai_assistant/session_modify`, {
       method: 'POST',
-      headers: header,
+      headers: newHeader,
       body: JSON.stringify(body)
     })
     if (!retry.ok) throw new Error('重试会话修改请求失败')
