@@ -11,30 +11,194 @@
       <i class="fas fa-plus"></i> 开启新对话
     </button>
     
-    <div class="conversation-list">
+    <div class="conversation-list" ref="listRef" @scroll="onScroll">
       <div 
-        v-for="(conversation, index) in sessionList" 
-        :key="index" 
-        class="conversation-item"
-        :class="{ active: currentSessionId === conversation.session_id }"
-        @click="$emit('select-conversation', conversation)"
+        v-for="section in groupedSections" 
+        :key="section.key"
+        class="conversation-section"
       >
-        <i class="fas fa-comment-dots conversation-icon"></i>
-        {{ conversation.title }}
+        <div class="section-label">{{ section.label }}</div>
+        <div 
+          v-for="(conversation, index) in section.items" 
+          :key="section.key + '-' + index" 
+          class="conversation-item"
+          :class="{ active: currentSessionId === conversation.session_id }"
+          @click="$emit('select-conversation', conversation)"
+        >
+          <i class="fas fa-comment-dots conversation-icon"></i>
+          <span class="conversation-title">{{ conversation.title }}</span>
+          <div class="ellipsis-wrap" @click.stop>
+            <button class="ellipsis-btn" @click="toggleMenu(conversation.session_id)">···</button>
+            <div class="dropdown" v-if="openMenuId === conversation.session_id">
+              <button class="dropdown-item" @click="emitRename(conversation)">重命名</button>
+              <button class="dropdown-item danger" @click="emitDelete(conversation)">删除</button>
+            </div>
+          </div>
+        </div>
       </div>
+      <div v-if="isLoadingMore" class="loading-more">加载中...</div>
     </div>
   </div>
 </template>
 
 <script>
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 export default {
   name: 'Sidebar',
   props: {
     isCollapsed: Boolean,
     sessionList: Array,
-    currentSessionId: String
+    currentSessionId: String,
+    hasMore: { type: Boolean, default: true }
   },
-  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation']
+  emits: ['toggle-sidebar', 'select-conversation', 'new-conversation', 'load-more', 'rename-conversation', 'delete-conversation'],
+  setup(props, { emit }) {
+    const listRef = ref(null)
+    const isLoadingMore = ref(false)
+    const autoFillAttempts = ref(0)
+    const openMenuId = ref(null)
+
+    function closeMenu() {
+      openMenuId.value = null
+    }
+
+    function toggleMenu(id) {
+      openMenuId.value = openMenuId.value === id ? null : id
+    }
+
+    function onClickOutside(e) {
+      const container = listRef.value
+      if (!container) return
+      if (!container.contains(e.target)) {
+        closeMenu()
+      }
+    }
+
+    function emitRename(conversation) {
+      closeMenu()
+      emit('rename-conversation', conversation)
+    }
+
+    function emitDelete(conversation) {
+      closeMenu()
+      emit('delete-conversation', conversation)
+    }
+
+    function parseDateTime(dateTimeStr) {
+      if (!dateTimeStr) return null
+      // expected format: YYYY-MM-DD HH:mm:ss
+      const [datePart, timePart] = dateTimeStr.split(' ')
+      if (!datePart) return null
+      const [y, m, d] = datePart.split('-').map(n => parseInt(n, 10))
+      let hh = 0, mm = 0, ss = 0
+      if (timePart) {
+        const parts = timePart.split(':').map(n => parseInt(n, 10))
+        hh = parts[0] || 0; mm = parts[1] || 0; ss = parts[2] || 0
+      }
+      return new Date(y, (m || 1) - 1, d || 1, hh, mm, ss)
+    }
+
+    function isSameDay(a, b) {
+      return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+    }
+
+    function daysDiff(from, to) {
+      // normalize to local midnight
+      const a = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+      const b = new Date(to.getFullYear(), to.getMonth(), to.getDate())
+      const ms = b.getTime() - a.getTime()
+      return Math.round(ms / 86400000)
+    }
+
+    const groupedSections = computed(() => {
+      const now = new Date()
+      const todayItems = []
+      const yesterdayItems = []
+      const sevenDaysItems = []
+      const withinThirtyItems = []
+      const monthGroups = new Map()
+
+      const list = Array.isArray(props.sessionList) ? props.sessionList : []
+      for (const conv of list) {
+        const dt = parseDateTime(conv.last_time)
+        if (!dt) { withinThirtyItems.push(conv); continue }
+        if (isSameDay(dt, now)) {
+          todayItems.push(conv)
+          continue
+        }
+        const diff = daysDiff(dt, now)
+        if (diff === 1) {
+          yesterdayItems.push(conv)
+        } else if (diff > 1 && diff <= 7) {
+          sevenDaysItems.push(conv)
+        } else if (diff > 7 && diff <= 30) {
+          withinThirtyItems.push(conv)
+        } else {
+          const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+          if (!monthGroups.has(ym)) monthGroups.set(ym, [])
+          monthGroups.get(ym).push(conv)
+        }
+      }
+
+      const sections = []
+      if (todayItems.length) sections.push({ key: 'today', label: '今天', items: todayItems })
+      if (yesterdayItems.length) sections.push({ key: 'yesterday', label: '昨天', items: yesterdayItems })
+      if (sevenDaysItems.length) sections.push({ key: 'within7', label: '7天内', items: sevenDaysItems })
+      if (withinThirtyItems.length) sections.push({ key: 'within30', label: '30天内', items: withinThirtyItems })
+
+      // Append monthly sections for >30 days, sorted newest -> oldest
+      const monthKeys = Array.from(monthGroups.keys()).sort((a, b) => b.localeCompare(a))
+      for (const key of monthKeys) {
+        sections.push({ key: `month-${key}`, label: key, items: monthGroups.get(key) })
+      }
+      return sections
+    })
+
+    function onScroll(e) {
+      const el = e.target
+      if (!el || isLoadingMore.value) return
+      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
+      if (nearBottom) {
+        isLoadingMore.value = true
+        emit('load-more', () => {
+          isLoadingMore.value = false
+        })
+      }
+    }
+
+    async function ensureScrollable() {
+      await nextTick()
+      const el = listRef.value
+      if (!el) return
+      const canScroll = el.scrollHeight > el.clientHeight + 2
+      if (!canScroll && props.hasMore && !isLoadingMore.value && autoFillAttempts.value < 5) {
+        autoFillAttempts.value += 1
+        isLoadingMore.value = true
+        emit('load-more', async () => {
+          isLoadingMore.value = false
+          await ensureScrollable()
+        })
+      }
+    }
+
+    onMounted(() => {
+      ensureScrollable()
+      document.addEventListener('click', onClickOutside)
+    })
+    onBeforeUnmount(() => {
+      document.removeEventListener('click', onClickOutside)
+    })
+
+    watch(() => props.sessionList, () => {
+      ensureScrollable()
+    })
+
+    watch(() => props.hasMore, () => {
+      ensureScrollable()
+    })
+
+    return { listRef, onScroll, isLoadingMore, groupedSections, openMenuId, toggleMenu, emitRename, emitDelete }
+  }
 }
 </script>
 
@@ -106,6 +270,23 @@ export default {
   padding: 8px;
 }
 
+.conversation-section {
+  margin-bottom: 10px;
+}
+
+.section-label {
+  color: rgba(255,255,255,.7);
+  font-size: 12px;
+  margin: 8px 0 6px 2px;
+}
+
+.loading-more {
+  padding: 10px 12px;
+  text-align: center;
+  color: rgba(255,255,255,.8);
+  font-size: 12px;
+}
+
 .conversation-item {
   padding: 10px 12px;
   margin-bottom: 8px;
@@ -114,6 +295,7 @@ export default {
   transition: background-color 0.2s, transform .05s ease;
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .conversation-item:hover {
@@ -128,6 +310,17 @@ export default {
   margin-right: 10px;
   font-size: 0.95rem;
 }
+
+.conversation-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ellipsis-wrap { position: relative; display: none; }
+.ellipsis-btn { background: transparent; border: none; color: rgba(255,255,255,.85); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 16px; line-height: 1; }
+.ellipsis-btn:hover { background: rgba(255,255,255,.12); }
+.conversation-item:hover .ellipsis-wrap { display: block; }
+.dropdown { position: absolute; right: 0; top: 22px; min-width: 120px; background: #2f3e4e; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; box-shadow: 0 10px 24px rgba(0,0,0,.24); overflow: hidden; z-index: 5; }
+.dropdown-item { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #fff; padding: 8px 12px; cursor: pointer; }
+.dropdown-item:hover { background: rgba(255,255,255,.08); }
+.dropdown-item.danger:hover { background: rgba(231, 76, 60, .18); }
 
 @media (max-width: 992px) {
   .sidebar {

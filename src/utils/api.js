@@ -13,13 +13,13 @@ export function generateUUID() {
 
 
 // 获取会话列表
-export async function fetchSessionList(sessionList, isLoading, userId) {
+export async function fetchSessionList(sessionList, isLoading, userId, page = 1, pageSize = 10, append = false) {
   try {
     if (isLoading) isLoading.value = true
     
     const requestBody = {
-      page: 1,
-      page_size: 10,
+      page: page,
+      page_size: pageSize,
       user_id: userId
     }
     const header = {
@@ -62,8 +62,14 @@ export async function fetchSessionList(sessionList, isLoading, userId) {
         
         const retryData = await retryResponse.json()
         if (retryData.code === 0) {
-          sessionList.value = retryData.data.session_list
-          return { success: true}
+          const list = retryData.data.session_list || []
+          if (append) {
+            sessionList.value = [...(sessionList.value || []), ...list]
+          } else {
+            sessionList.value = list
+          }
+          const hasMore = Array.isArray(list) && list.length === pageSize
+          return { success: true, hasMore }
         } else {
           console.error('重试获取会话列表失败:', retryData.msg)
         }
@@ -77,8 +83,14 @@ export async function fetchSessionList(sessionList, isLoading, userId) {
         return
       }
     } else if (data.code === 0) {
-      sessionList.value = data.data.session_list
-      return { success: true}
+      const list = data.data.session_list || []
+      if (append) {
+        sessionList.value = [...(sessionList.value || []), ...list]
+      } else {
+        sessionList.value = list
+      }
+      const hasMore = Array.isArray(list) && list.length === pageSize
+      return { success: true, hasMore }
     } else {
       console.error('获取会话列表失败:', data.msg)
     }
@@ -105,6 +117,46 @@ export async function fetchSessionList(sessionList, isLoading, userId) {
     console.error('获取会话列表出错:', error)
     if (isLoading) isLoading.value = false
   }
+}
+
+// 修改会话属性：支持删除(op_type=2)与改标题(op_type=3)
+export async function modifySession({ sessionId, opType, title }) {
+  const body = {
+    session_id: sessionId,
+    op_type: opType,
+    title: title
+  }
+  const header = {
+    'credentials': 'same-origin',
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer '+localStorage.getItem("token")
+  }
+  const response = await fetch(`${API_BASE_URL}/ai_assistant/session_modify`, {
+    method: 'POST',
+    headers: header,
+    body: JSON.stringify(body)
+  })
+  if (!response.ok) throw new Error('会话修改请求失败')
+  const data = await response.json()
+  if (data.code === 1101 && data.msg === "token已过期，请刷新") {
+    await refreshToken()
+    const newHeader = {
+      'credentials': 'same-origin',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer '+localStorage.getItem("token")
+    }
+    const retry = await fetch(`${API_BASE_URL}/ai_assistant/session_modify`, {
+      method: 'POST',
+      headers: newHeader,
+      body: JSON.stringify(body)
+    })
+    if (!retry.ok) throw new Error('重试会话修改请求失败')
+    const retryData = await retry.json()
+    if (retryData.code === 0) return { success: true }
+    throw new Error(retryData.msg || '会话修改失败')
+  }
+  if (data.code === 0) return { success: true }
+  throw new Error(data.msg || '会话修改失败')
 }
 
 // 获取会话历史
@@ -153,7 +205,8 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
         
         const retryData = await retryResponse.json()
         if (retryData.code === 0) {
-          currentMessages.value = retryData.data
+          currentMessages.value = retryData.data.history_list
+          
         } else {
           console.error('重试获取会话历史失败:', retryData.msg)
           currentMessages.value = []
@@ -168,7 +221,7 @@ export async function fetchConversationHistory(sessionId, currentMessages) {
         return
       }
     } else if (data.code === 0) {
-      currentMessages.value = data.data
+      currentMessages.value = data.data.history_list
     } else {
       console.error('获取会话历史失败:', data.msg)
       currentMessages.value = []
@@ -194,7 +247,8 @@ export async function sendMessageToAI(sessionId, message, currentMessages, sessi
     const thinkingMessage = {
       msg_id: generateUUID(),
       role: 'assistant',
-      content: '思考中...'
+      content: '思考中...',
+      modifyTime: new Date().toISOString()
     };
     currentMessages.value.push(thinkingMessage);
     

@@ -9,29 +9,34 @@
       <div 
         v-for="(message, index) in messages" 
         :key="index" 
-        class="message"
+        class="message-row"
         :class="message.role === 'user' ? 'user' : 'bot'"
       >
-        <template v-if="message.role === 'user'">
-          <div class="message-text" v-html="renderMarkdown(message.content)"></div>
-        </template>
-        <template v-else>
-          <!-- 思考中状态 -->
-          <div v-if="isThinking(message)" class="thinking-indicator">
-            <div class="thinking-dots">
-              <span class="dot"></span>
-              <span class="dot"></span>
-              <span class="dot"></span>
+        <div class="message-meta" :class="message.role === 'user' ? 'user' : 'bot'">
+          <span class="message-time" v-if="getMessageTime(message)">{{ formatTime(getMessageTime(message)) }}</span>
+        </div>
+        <div class="message" :class="message.role === 'user' ? 'user' : 'bot'">
+          <template v-if="message.role === 'user'">
+            <div class="message-text" v-html="renderMarkdown(message.content)"></div>
+          </template>
+          <template v-else>
+            <!-- 思考中状态 -->
+            <div v-if="isThinking(message)" class="thinking-indicator">
+              <div class="thinking-dots">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+              </div>
+              <span class="thinking-text">{{ getThinkingText(message.content) }}</span>
             </div>
-            <span class="thinking-text">{{ getThinkingText(message.content) }}</span>
-          </div>
-          <!-- 正常消息内容 -->
-          <div 
-            v-else
-            class="message-text markdown-content" 
-            v-html="renderMarkdown(message.content)"
-          ></div>
-        </template>
+            <!-- 正常消息内容 -->
+            <div 
+              v-else
+              class="message-text markdown-content" 
+              v-html="renderMarkdown(message.content)"
+            ></div>
+          </template>
+        </div>
       </div>
     </div>
     <div class="chat-input">
@@ -133,6 +138,31 @@ export default {
       })
     }
 
+    const formatTime = (value) => {
+      if (!value) return ''
+      try {
+        // 支持直接显示后端返回的本地化字符串，或解析 ISO/常见日期格式
+        const isLikelyIso = /\d{4}-\d{2}-\d{2}/.test(value)
+        const date = isLikelyIso ? new Date(value) : new Date(value)
+        if (!isNaN(date.getTime())) {
+          const y = date.getFullYear()
+          const m = String(date.getMonth() + 1).padStart(2, '0')
+          const d = String(date.getDate()).padStart(2, '0')
+          const hh = String(date.getHours()).padStart(2, '0')
+          const mm = String(date.getMinutes()).padStart(2, '0')
+          return `${y}-${m}-${d} ${hh}:${mm}`
+        }
+        return String(value)
+      } catch (e) {
+        return String(value)
+      }
+    }
+
+    const getMessageTime = (message) => {
+      if (!message) return ''
+      return message.modify_time || message.last_time || message.lastTime || message.time || ''
+    }
+
     function handleSendMessage() {
       if (!newMessage.value.trim()) return
       
@@ -166,7 +196,9 @@ export default {
       handleInputFocus,
       renderMarkdown,
       isThinking,
-      getThinkingText
+      getThinkingText,
+      formatTime,
+      getMessageTime
     }
   }
 }
@@ -201,11 +233,34 @@ export default {
   gap: 1rem;
 }
 
+.message-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.message-row.user {
+  align-items: flex-end;
+}
+.message-row.bot {
+  align-items: flex-start;
+}
+
 .message {
   max-width: 95%;
   padding: 0rem 1.5rem 1rem 1.5rem;
   border-radius: 12px;
   line-height: 1.4;
+}
+
+.message-meta {
+  font-size: 12px;
+  margin: 6px 2px 6px 2px;
+}
+.message-meta.user {
+  color: #999;
+}
+.message-meta.bot {
+  color: #999;
 }
 
 .message.user {

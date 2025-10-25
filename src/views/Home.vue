@@ -1,7 +1,10 @@
 <template>
   <div id="home">
     <header class="header">
-      <h1><i class="fas fa-comments"></i> AI 旅游生活助手</h1>
+      <h1>
+        <img src="/logo-white.svg" alt="logo" style="width:22px;height:22px;display:inline-block;vertical-align:middle;" />
+        AI 智能旅游规划助手 
+      </h1>
       <div class="user-info" @click="toggleUserMenu">
         <span class="nickname">{{ displayNickname }}</span>
         <i class="fas fa-caret-down"></i>
@@ -15,9 +18,13 @@
         :is-collapsed="isSidebarCollapsed"
         :session-list="sessionList"
         :current-session-id="currentSessionId"
+        :has-more="hasMoreSessions"
         @toggle-sidebar="toggleSidebar"
+        @load-more="handleLoadMoreSessions"
         @select-conversation="selectConversation"
         @new-conversation="startNewConversation"
+        @rename-conversation="onRenameConversation"
+        @delete-conversation="onDeleteConversation"
       />
       <ChatContainer
         :current-conversation-title="currentConversationTitle"
@@ -48,7 +55,7 @@ import { logout, me } from '../utils/api.js'
 import Sidebar from '../components/Sidebar.vue'
 import ChatContainer from '../components/ChatContainer.vue'
 import MapContainer from '../components/MapContainer.vue'
-import { generateUUID, fetchSessionList, fetchConversationHistory, sendMessageToAI } from '../utils/api.js'
+import { generateUUID, fetchSessionList, fetchConversationHistory, sendMessageToAI, modifySession } from '../utils/api.js'
 import '../assets/style.css'
 
 export default {
@@ -67,6 +74,9 @@ export default {
     })
 
     const sessionList = ref([])
+    const sessionPage = ref(1)
+    const sessionPageSize = ref(10)
+    const hasMoreSessions = ref(true)
     const currentSessionId = ref(null)
     const currentMessages = ref([])
     const isLoading = ref(false)
@@ -78,6 +88,39 @@ export default {
       const session = sessionList.value.find(s => s.session_id === currentSessionId.value)
       return session ? session.title : '未知对话'
     })
+
+    async function onDeleteConversation(conversation) {
+      if (!conversation || !conversation.session_id) return
+      if (!confirm('确认要删除该会话及其消息吗？此操作不可恢复')) return
+      try {
+        await modifySession({ sessionId: conversation.session_id, opType: 2 })
+        // 前端本地移除
+        sessionList.value = sessionList.value.filter(s => s.session_id !== conversation.session_id)
+        if (currentSessionId.value === conversation.session_id) {
+          currentSessionId.value = null
+          currentMessages.value = []
+          selectedRouteData.value = null
+        }
+      } catch (e) {
+        alert(e.message || '删除失败')
+      }
+    }
+
+    async function onRenameConversation(conversation) {
+      if (!conversation || !conversation.session_id) return
+      const newTitle = prompt('请输入新的标题', conversation.title || '')
+      if (newTitle === null) return
+      const trimmed = newTitle.trim()
+      if (!trimmed) { alert('标题不能为空'); return }
+      try {
+        await modifySession({ sessionId: conversation.session_id, opType: 3, title: trimmed })
+        // 本地更新标题
+        const target = sessionList.value.find(s => s.session_id === conversation.session_id)
+        if (target) target.title = trimmed
+      } catch (e) {
+        alert(e.message || '修改标题失败')
+      }
+    }
 
     function toggleSidebar() {
       isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -147,7 +190,8 @@ export default {
       currentMessages.value.push({
         msg_id: generateUUID(),
         role: 'assistant',
-        content: '您好！我是您的AI旅游生活助手 🌟\n\n我可以为您提供：\n - 🚗 天气及出行建议\n - 📍 个性化旅游路线规划\n - 🎯 景点详细介绍\n\n请告诉我您的需求，比如：\n"请为我生成北京市旅游攻略，有3天2夜时间，我喜欢人文风景"'
+        content: '您好！我是您的AI旅游生活助手 🌟\n\n我可以为您提供：\n - 🚗 天气及出行建议\n - 📍 个性化旅游路线规划\n - 🎯 景点详细介绍\n\n请告诉我您的需求，比如：\n"请为我生成北京市旅游攻略，有3天2夜时间，我喜欢人文风景"',
+        modifyTime: new Date().toISOString()
       })
       
       // 强制触发响应式更新
@@ -162,7 +206,7 @@ export default {
         await startNewConversation()
       }
       
-      const userMessage = { msg_id: generateUUID(), role: 'user', content: message }
+      const userMessage = { msg_id: generateUUID(), role: 'user', content: message, modifyTime: new Date().toISOString() }
       currentMessages.value.push(userMessage)
       
       // 强制触发响应式更新
@@ -186,7 +230,8 @@ export default {
     }
 
     onMounted(async () => {
-      fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'))
+      const res = await fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'), sessionPage.value, sessionPageSize.value)
+      hasMoreSessions.value = !!(res && res.hasMore)
       // token 未过期直达首页时，尝试刷新昵称
       try {
         // console.log('token 未过期直达首页时，尝试刷新昵称')
@@ -199,6 +244,13 @@ export default {
       }
       document.addEventListener('click', handleClickOutside)
     })
+    async function handleLoadMoreSessions(done) {
+      if (!hasMoreSessions.value) { if (done) done(); return }
+      sessionPage.value += 1
+      const res = await fetchSessionList(sessionList, isLoading, localStorage.getItem('user_id'), sessionPage.value, sessionPageSize.value, true)
+      hasMoreSessions.value = !!(res && res.hasMore)
+      if (done) done()
+    }
 
     onBeforeUnmount(() => {
       document.removeEventListener('click', handleClickOutside)
@@ -225,7 +277,10 @@ export default {
       selectedRouteData,
       updateTime,
       displayNickname,
-      showUserMenu
+      showUserMenu,
+      handleLoadMoreSessions
+      , onDeleteConversation
+      , onRenameConversation
     }
   }
 }
