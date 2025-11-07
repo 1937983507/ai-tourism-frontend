@@ -5,11 +5,22 @@
         <img src="/logo-white.svg" alt="logo" style="width:22px;height:22px;display:inline-block;vertical-align:middle;" />
         AI 智能旅游规划助手 
       </h1>
-      <div class="user-info" @click="toggleUserMenu">
-        <span class="nickname">{{ displayNickname }}</span>
-        <i class="fas fa-caret-down"></i>
-        <div class="dropdown" v-if="showUserMenu">
-          <button class="dropdown-item" @click="handleLogout">退出登录</button>
+      <div class="header-actions">
+        <a
+          class="github-link"
+          href="https://github.com/1937983507/ai-tourism"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="访问 GitHub 仓库"
+        >
+          <i class="fab fa-github"></i>
+        </a>
+        <div class="user-info" @click="toggleUserMenu">
+          <span class="nickname">{{ displayNickname }}</span>
+          <i class="fas fa-caret-down"></i>
+          <div class="dropdown" v-if="showUserMenu">
+            <button class="dropdown-item" @click="handleLogout">退出登录</button>
+          </div>
         </div>
       </div>
     </header>
@@ -292,6 +303,10 @@ export default {
   display: flex;
   flex-direction: column;
 }
+.header .header-actions { display: flex; align-items: center; gap: 12px; }
+.header .github-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: #eef2ff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); transition: background .2s ease, transform .2s ease, box-shadow .2s ease; font-size: 18px; }
+.header .github-link:hover { background: rgba(255,255,255,.22); box-shadow: 0 6px 18px rgba(15,23,42,.18); transform: translateY(-1px); color: #ffffff; }
+.header .github-link:active { transform: translateY(0); }
 .header .user-info { position: relative; cursor: pointer; display: flex; align-items: center; gap: 8px; }
 .header .user-info .dropdown { position: absolute; right: 0; top: 36px; background: #fff; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; box-shadow: 0 12px 30px rgba(15,23,42,.12); overflow: hidden; z-index: 20; }
 .header .user-info .dropdown-item { display: block; padding: 10px 14px; background: #fff; border: none; width: 140px; text-align: left; cursor: pointer; }
