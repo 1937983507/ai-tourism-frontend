@@ -469,7 +469,7 @@ export function processStreamedData(data) {
     // console.log("data:", data)
     let messages = [];
     const parts = data.split('data:'); // 分割每一行的响应
-    console.log(parts)
+    // console.log(parts)
     for (let part of parts) {
         // 跳过空行
         if (part.trim() === '') continue;
