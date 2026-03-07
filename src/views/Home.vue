@@ -289,9 +289,10 @@ export default {
       updateTime,
       displayNickname,
       showUserMenu,
-      handleLoadMoreSessions
-      , onDeleteConversation
-      , onRenameConversation
+      handleLoadMoreSessions,
+      hasMoreSessions,
+      onDeleteConversation,
+      onRenameConversation
     }
   }
 }

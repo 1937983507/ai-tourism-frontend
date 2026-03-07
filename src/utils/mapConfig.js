@@ -13,11 +13,11 @@ export const MAP_CONFIG = {
     name: '高德地图',
     enabled: true,
     // JavaScript API密钥（用于前端地图显示）
-    apiKey: '80838eddfb922202b289fd1ad6fa4e58',
-    securityJsCode: 'a45b8fdd549065da27a9395c8d5d87bd',
-    scriptUrl: 'https://webapi.amap.com/maps?v=2.0&key=80838eddfb922202b289fd1ad6fa4e58&plugin=AMap.Driving,AMap.Adaptor',
+    apiKey: import.meta.env.VITE_AMAP_API_KEY || '',
+    securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || '',
+    scriptUrl: `https://webapi.amap.com/maps?v=2.0&key=${import.meta.env.VITE_AMAP_API_KEY || ''}&plugin=AMap.Driving,AMap.Adaptor`,
     // Web API密钥（用于地理编码服务）
-    webApiKey: 'a7a5be837d1645cd49c74a601187bc35', // 需要替换为实际的Web API密钥
+    webApiKey: import.meta.env.VITE_AMAP_WEB_API_KEY || '',
     features: {
       routing: true,
       satellite: true,

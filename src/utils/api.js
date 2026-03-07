@@ -1,6 +1,8 @@
 // API基础URL
-const API_BASE_URL = 'http://127.0.0.1:8290'
-// const API_BASE_URL = ''
+// 通过 Vite 环境变量配置：
+// - 开发环境：.env.development 中设置为 http://127.0.0.1:8290
+// - 生产环境：.env.production 中留空，走同域 Nginx 反向代理（相对路径）
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 // 生成UUID
 export function generateUUID() {
@@ -469,7 +471,7 @@ export function processStreamedData(data) {
     // console.log("data:", data)
     let messages = [];
     const parts = data.split('data:'); // 分割每一行的响应
-    console.log(parts)
+    // console.log(parts)
     for (let part of parts) {
         // 跳过空行
         if (part.trim() === '') continue;
