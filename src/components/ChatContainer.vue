@@ -59,6 +59,14 @@
 import { ref, nextTick, watch, computed } from 'vue'
 import { marked } from 'marked'
 
+// 在模块级别配置 marked，确保只配置一次
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  headerIds: false,
+  mangle: false
+})
+
 export default {
   name: 'ChatContainer',
   props: {
@@ -96,46 +104,48 @@ export default {
       return '正在思考中...'
     }
 
-
-   // 创建自定义渲染器
-    const renderer = new marked.Renderer()
-
-    renderer.paragraph = (text) => {
-      // console.log(text);
-      return `<p style="margin-top: 1em; line-height: 1.6;">${text.text}</p>`
-    }
-
-    renderer.heading = (text, level) => {
-      return `<h${text.depth} style="margin-top: 1.5em; line-height: 1.8">${text.text}</h${text.depth}>`
-    }
-    
-    // 重写图片渲染方法
-    renderer.image = (img) => {
-      // console.log(img);
-      // 设置图片最大宽度为100%，高度自适应，并添加圆角等样式
-      return `<img src="${img.href}" alt="${img.text || ''}" title="${img.title || ''}" 
-              style="max-width: 100%; height: auto; border-radius: 8px; 
-                     box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 10px 0;" 
-              onload="this.style.opacity=1" 
-              onerror="this.style.display='none'">`
-    }
-
-
     // Markdown 渲染函数
     const renderMarkdown = (markdown) => {
+      if (!markdown) {
+        return ''
+      }
+      
+      // 确保输入是字符串
+      const markdownStr = typeof markdown === 'string' ? markdown : String(markdown)
+      
       // 将字符串中的 \n 转换为实际换行符
-      // console.log(markdown);
-      const processedMarkdown = markdown
+      const processedMarkdown = markdownStr
           .replace(/\\n/g, '\n')
           .replace(/\n\s*\n/g, '\n\n')  // 将多个空行规范化为两个换行
-      // console.log(processedMarkdown);
-      return marked.parse(processedMarkdown, {
-        breaks: true,
-        gfm: true,
-        headerIds: false,
-        mangle: false,
-        renderer: renderer  // 使用自定义渲染器
-      })
+      
+      try {
+        // marked.parse() 返回字符串
+        const html = marked.parse(processedMarkdown)
+        
+        // 确保返回值是字符串
+        if (typeof html !== 'string') {
+          console.error('marked.parse() returned non-string:', typeof html, html)
+          // 如果返回的是 Promise，等待它
+          if (html && typeof html.then === 'function') {
+            console.error('marked.parse() returned a Promise, this should not happen')
+            return markdownStr
+          }
+          return markdownStr
+        }
+        
+        // 验证返回的 HTML 是否包含标签
+        if (!html.includes('<') && html === processedMarkdown.trim()) {
+          console.warn('Markdown parsing may have failed - no HTML tags found')
+          console.warn('Input:', processedMarkdown.substring(0, 100))
+          console.warn('Output:', html.substring(0, 100))
+        }
+        
+        return html
+      } catch (error) {
+        console.error('Markdown parsing error:', error)
+        console.error('Error stack:', error.stack)
+        return markdownStr // 如果解析失败，返回原始文本
+      }
     }
 
     const formatTime = (value) => {
@@ -312,34 +322,104 @@ export default {
 /* 为Markdown内容添加更多样式 */
 .message-text {
   word-wrap: break-word;
+  white-space: normal;
 }
 
-.message-text img {
+/* 使用深度选择器确保样式应用到动态插入的 HTML */
+.message-text :deep(img) {
   max-width: 100%;
+  height: auto;
   border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin: 10px 0;
+  display: block;
 }
 
-.message-text code {
+.message-text :deep(strong) {
+  font-weight: bold;
+  color: inherit;
+}
+
+.message-text :deep(em) {
+  font-style: italic;
+}
+
+.message-text :deep(p) {
+  margin-top: 1em;
+  margin-bottom: 1em;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.message-text :deep(h1),
+.message-text :deep(h2),
+.message-text :deep(h3),
+.message-text :deep(h4),
+.message-text :deep(h5),
+.message-text :deep(h6) {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.8;
+  font-weight: bold;
+  white-space: normal;
+}
+
+.message-text :deep(h1) {
+  font-size: 1.8em;
+}
+
+.message-text :deep(h2) {
+  font-size: 1.5em;
+}
+
+.message-text :deep(h3) {
+  font-size: 1.3em;
+}
+
+.message-text :deep(code) {
   background: #f1f2f6;
   padding: 0.2rem 0.4rem;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
 }
 
-.message-text pre {
+.message-text :deep(pre) {
   background: #f8f9fa;
   padding: 1rem;
   border-radius: 6px;
   overflow-x: auto;
   margin: 0.5rem 0;
+  white-space: pre-wrap;
 }
 
-.message-text blockquote {
+.message-text :deep(pre code) {
+  background: transparent;
+  padding: 0;
+}
+
+.message-text :deep(blockquote) {
   border-left: 4px solid #3498db;
   background: #f8f9fa;
   margin: 1rem 0;
   padding: 1rem 1.5rem;
   border-radius: 0 6px 6px 0;
+}
+
+.message-text :deep(hr) {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 1.5em 0;
+}
+
+.message-text :deep(ul),
+.message-text :deep(ol) {
+  margin: 1em 0;
+  padding-left: 2em;
+}
+
+.message-text :deep(li) {
+  margin: 0.5em 0;
+  line-height: 1.6;
 }
 
 /* 思考中指示器样式 */
