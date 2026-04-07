@@ -50,6 +50,17 @@
         :routeData="selectedRouteData"
       />
     </div>
+    <footer class="home-footer">
+      <div class="home-footer-text">
+        Copyright &copy; 2024 规划助手 aitrip.chat All Rights Reserved. 备案号:
+        <a
+          class="beian-link"
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >鄂ICP备2024043287号-2</a>
+      </div>
+    </footer>
     <button 
       class="floating-toggle" 
       @click="toggleSidebar" 
@@ -303,6 +314,29 @@ export default {
   height: 100vh;
   display: flex;
   flex-direction: column;
+}
+.home-footer {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  background: rgba(255,255,255,0.9);
+  border-top: 1px solid rgba(229,231,235,1);
+}
+.home-footer .home-footer-text {
+  line-height: 1.5;
+}
+.home-footer .beian-link {
+  margin-left: 4px;
+}
+.home-footer .beian-link:hover {
+  text-decoration: underline;
+}
+#home .container {
+  /* 覆盖全局固定高度，确保底部 footer 能占用空间 */
+  height: auto !important;
+  min-height: 0;
 }
 .header .header-actions { display: flex; align-items: center; gap: 12px; }
 .header .github-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: #eef2ff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); transition: background .2s ease, transform .2s ease, box-shadow .2s ease; font-size: 18px; }
