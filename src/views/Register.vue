@@ -34,6 +34,17 @@
       </form>
       <p class="helper">已有账号？<router-link to="/login">去登录</router-link></p>
     </div>
+    <footer class="auth-footer">
+      <div class="auth-footer-text">
+        Copyright &copy; 2024 规划助手 aitrip.chat All Rights Reserved. 备案号:
+        <a
+          class="beian-link"
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >鄂ICP备2024043287号-2</a>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -83,7 +94,7 @@ export default {
   align-items: center;
   justify-content: center;
   background: linear-gradient(180deg, #ffffff 0%, #f5fbff 100%);
-  padding: 24px;
+  padding: 24px 24px 72px;
   overflow: hidden;
 }
 .bg-journey {
@@ -113,6 +124,28 @@ input::placeholder { color: #94a3b8; }
 .primary[disabled] { opacity: .9; cursor: not-allowed; }
 
 .helper { margin-top: 12px; text-align: center; font-size: 13px; color: #6b7280; }
+.auth-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 10px 20px;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  background: rgba(255,255,255,0.9);
+  border-top: 1px solid rgba(229,231,235,1);
+}
+.auth-footer .auth-footer-text {
+  line-height: 1.5;
+}
+.auth-footer .beian-link {
+  margin-left: 4px;
+}
+.auth-footer .beian-link:hover {
+  text-decoration: underline;
+}
 .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; margin-right: 6px; animation: spin .7s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
